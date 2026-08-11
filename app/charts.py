@@ -15,7 +15,6 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 from matplotlib.patches import Rectangle, Arc, Circle, Wedge, RegularPolygon, FancyBboxPatch, Polygon
 from matplotlib.transforms import Bbox
@@ -342,7 +341,7 @@ def _pill(ax, x, y, text, fontsize=8.6, facecolor=LABEL_BG, textcolor=INK):
 # worst zone within each group.
 ZONE_2PT = {"paint", "short_corner_L", "short_corner_R", "mid_L", "mid_R"}
 ZONE_3PT = {"corner_3_L", "corner_3_R", "wing_3_L", "wing_3_R", "top_3"}
-GREEN_CMAP = cm.get_cmap("Greens")
+GREEN_CMAP = matplotlib.colormaps["Greens"]
 GREEN_SPAN = 20.0       # pct points above average that reach full-strength green
 LIGHT_RED = "#f2a6a2"   # below average, but not the worst
 WORST_RED = "#c81e1e"   # the single coldest zone in its group (matches RANK_RED)
