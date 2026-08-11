@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Season Tracker</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🏀 Season Tracker</div>
+  <nav id="tabs">
+    <button class="tab-btn active" data-tab="import">Import</button>
+    <button class="tab-btn" data-tab="standings">Standings</button>
+    <button class="tab-btn" data-tab="leaderboards">Leaderboards</button>
+    <button class="tab-btn" data-tab="rankings">Rankings</button>
+    <button class="tab-btn" data-tab="shotcharts">Shot Charts</button>
+    <button class="tab-btn" data-tab="fivemin">5 Minute</button>
+    <button class="tab-btn" data-tab="lineups">Line Ups</button>
+    <button class="tab-btn" data-tab="games">Game Log</button>
+    <button class="tab-btn" data-tab="strengths">Scouting Report</button>
+    <button class="tab-btn" data-tab="matchup">Matchup Scout</button>
+  </nav>
+  <div id="summary-pill" class="summary-pill"></div>
+</header>
+
+<main>
+  <section id="tab-import" class="tab-panel active">
+    <h1>Import a game</h1>
+
+    <div class="field-row">
+      <label for="game-date">Game date (used for sorting/trends — the feed itself has no date field)</label>
+      <input id="game-date" type="date">
+    </div>
+
+    <h3 style="margin-top:20px">Option A — paste the game's FIBA LiveStats link</h3>
+    <p class="muted">Easiest: paste the normal boxscore page URL you'd open in a browser
+      (<code>fibalivestats.dcd.shared.geniussports.com/u/&lt;code&gt;/&lt;matchId&gt;/…</code>) or just the
+      numeric match id — the app fetches the game's raw data itself, no saving files required.</p>
+    <div class="field-row">
+      <input id="url-input" type="text" placeholder="https://fibalivestats.dcd.shared.geniussports.com/u/…/1234567/  (or just 1234567)" style="flex:1; min-width:280px; padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
+      <button id="url-import-btn" class="btn-primary">Fetch &amp; import</button>
+    </div>
+
+    <h3 style="margin-top:24px">Option B — drop a JSON file</h3>
+    <p class="muted">If you already have the <code>data.json</code> file saved (or it's from somewhere other than
+      FIBA LiveStats), drop it in directly. You can drop several at once.</p>
+    <div id="dropzone" class="dropzone">
+      <div class="dropzone-inner">
+        <div class="dz-icon">⬇</div>
+        <div>Drag &amp; drop game JSON file(s) here, or click to choose</div>
+        <input id="file-input" type="file" accept="application/json,.json" multiple hidden>
+      </div>
+    </div>
+
+    <div id="import-log"></div>
+  </section>
+
+  <section id="tab-standings" class="tab-panel">
+    <h1>Standings</h1>
+    <div id="standings-table"></div>
+  </section>
+
+  <section id="tab-leaderboards" class="tab-panel">
+    <h1>Player Leaderboards</h1>
+    <div class="field-row">
+      <label for="lb-sort">Sort by</label>
+      <select id="lb-sort">
+        <option value="ppg">PPG</option>
+        <option value="rpg">RPG</option>
+        <option value="apg">APG</option>
+        <option value="spg">SPG</option>
+        <option value="bpg">BPG</option>
+        <option value="fg_pct">FG%</option>
+        <option value="tp_pct">3P%</option>
+        <option value="ft_pct">FT%</option>
+      </select>
+    </div>
+    <div id="leaderboard-table"></div>
+  </section>
+
+  <section id="tab-rankings" class="tab-panel">
+    <h1>Rankings</h1>
+    <p class="muted">Every stat line, ranked — season averages plus every shot-clock timeframe (Overall / 0-8s / 8-18s / 18+s). Percentage categories require at least 5 attempts in that timeframe to qualify.</p>
+    <div class="field-row">
+      <label for="rk-mode">Rank</label>
+      <select id="rk-mode">
+        <option value="players">Players</option>
+        <option value="teams">Teams</option>
+      </select>
+      <label for="rk-metric">By</label>
+      <select id="rk-metric"></select>
+      <span id="rk-mingames-wrap">
+        <label for="rk-mingames">Min games</label>
+        <select id="rk-mingames">
+          <option value="1">1+</option>
+          <option value="3">3+</option>
+          <option value="5" selected>5+</option>
+          <option value="10">10+</option>
+          <option value="15">15+</option>
+          <option value="20">20+</option>
+        </select>
+      </span>
+    </div>
+    <div id="rankings-table"></div>
+  </section>
+
+  <section id="tab-shotcharts" class="tab-panel">
+    <h1>Season Shot Charts</h1>
+    <p class="muted">Aggregated across every game imported so far for the selected team or player.</p>
+    <div class="field-row">
+      <label for="sc-mode">Show</label>
+      <select id="sc-mode">
+        <option value="team">Team</option>
+        <option value="player">Player</option>
+      </select>
+      <label for="sc-team-filter">Team</label>
+      <select id="sc-team-filter"></select>
+      <span id="sc-player-wrap">
+        <label for="sc-select">Player</label>
+        <select id="sc-select"></select>
+      </span>
+    </div>
+    <div id="sc-profile"></div>
+
+    <div class="shotchart-grid">
+      <div class="chart-col">
+        <div class="card">
+          <img id="sc-image" class="chart-img" alt="Shot chart" />
+        </div>
+        <div class="card">
+          <h3>Shot-clock breakdown <span class="hint" title="Approximate — derived from the game clock and the last possession-changing event (rebound, turnover, made basket, or period start), since the feed has no explicit shot-clock field. Buckets are seconds elapsed since the shot clock was last reset (0-8 = early clock, 18+ = late clock).">ⓘ</span></h3>
+          <div id="sc-clock-table"></div>
+        </div>
+      </div>
+      <div class="chart-col">
+        <div class="card">
+          <img id="zone-image" class="chart-img" alt="Zone map" />
+        </div>
+        <div class="card">
+          <h3>Zone breakdown <span class="hint" title="10 regions — 2PT split by distance (Paint, Short Corner L/R, Mid-Range L/R) and 3PT split by angle (Corner, Wing, Top, Wing, Corner).">ⓘ</span></h3>
+          <div id="zone-table"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sc-defense-section" style="display:none">
+      <h3 class="section-divider">Defense — shots allowed <span class="hint" title="Every shot taken by this team's opponents in games they played. Same charts and tables as above, mirrored onto what the defense gave up.">ⓘ</span></h3>
+      <div class="shotchart-grid">
+        <div class="chart-col">
+          <div class="card">
+            <img id="sc-image-def" class="chart-img" alt="Opponent shot chart" />
+          </div>
+          <div class="card">
+            <h3>Shot-clock breakdown <span class="hint" title="Same as the offensive table, but for shots the opponent took against this team.">ⓘ</span></h3>
+            <div id="sc-clock-table-def"></div>
+          </div>
+        </div>
+        <div class="chart-col">
+          <div class="card">
+            <img id="zone-image-def" class="chart-img" alt="Opponent zone map" />
+          </div>
+          <div class="card">
+            <h3>Zone breakdown <span class="hint" title="Green = holds opponents below their zone average (good defense). Red = the zone opponents shoot best from against this team.">ⓘ</span></h3>
+            <div id="zone-table-def"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-fivemin" class="tab-panel">
+    <h1>5 Minute Splits</h1>
+    <p class="muted">Every stat, bucketed into the 8 five-minute segments of regulation (0-5, 5-10, … 35-40), aggregated across every game imported so far for the selected team.</p>
+    <div class="fm-legend">
+      <span class="fm-legend-item"><span class="fm-sw fm-sw-blue"></span>Top 2 in the league for that segment</span>
+      <span class="fm-legend-item"><span class="fm-sw fm-sw-blue fm-sw-boxed"></span>League best (#1) — boxed</span>
+      <span class="fm-legend-item"><span class="fm-sw fm-sw-red"></span>Bottom 3 in the league for that segment</span>
+      <span class="fm-legend-item"><span class="fm-sw fm-sw-red fm-sw-boxed"></span>League worst (last) — boxed</span>
+      <span class="fm-legend-item"><span class="fm-sw-line"></span>Dashed line — average league rank across all 8 segments (right-hand axis, #1 at top)</span>
+    </div>
+    <div class="field-row">
+      <label for="fm-team">Team</label>
+      <select id="fm-team"></select>
+      <label for="fm-scope">Show</label>
+      <select id="fm-scope">
+        <option value="season">Season</option>
+        <option value="last5">Last 5 Games</option>
+      </select>
+    </div>
+    <div class="card fm-read-card">
+      <h3>Segment-by-segment read <span class="hint" title="Each cell's league rank for that segment, out of 10 teams: #1-3 = Strong, #4-7 = Middle of the road, #8-10 = Weak. Turnovers and fouls are already ranked fewer-is-better, so 'Strong' there means committing the fewest.">ⓘ</span></h3>
+      <div id="fm-read-table"></div>
+    </div>
+    <div class="fivemin-grid">
+      <div class="card"><h3>Points</h3><canvas id="fm-pts"></canvas></div>
+      <div class="card"><h3>2PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span></h3><canvas id="fm-fg2"></canvas></div>
+      <div class="card"><h3>3PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span></h3><canvas id="fm-fg3"></canvas></div>
+      <div class="card"><h3>Free Throws Attempted <span class="hint" title="Bar height is TOTAL FREE THROWS ATTEMPTED (not %), and it's ranked by that same volume -- getting to the line more is a better sign of how a team is playing in that stretch than FT% off a small sample. FT% still shown in small text for reference.">ⓘ</span></h3><canvas id="fm-ft"></canvas></div>
+      <div class="card"><h3>Offensive Rebounds</h3><canvas id="fm-oreb"></canvas></div>
+      <div class="card"><h3>Defensive Rebounds</h3><canvas id="fm-dreb"></canvas></div>
+      <div class="card"><h3>Fouls Committed</h3><canvas id="fm-fouls"></canvas></div>
+      <div class="card"><h3>Fouled (Drawn)</h3><canvas id="fm-fouled"></canvas></div>
+      <div class="card"><h3>Turnovers</h3><canvas id="fm-tov"></canvas></div>
+      <div class="card"><h3>Steals</h3><canvas id="fm-stl"></canvas></div>
+    </div>
+
+    <h3 class="section-divider">Defense — opponent stats <span class="hint" title="Same 8 five-minute segments, but for what this team's OPPONENTS did against them in games they played. Colouring flips direction where fewer is better for the defense (e.g. points/rebounds/steals allowed, fouls committed against opponents), and stays higher-is-better where forcing more is good (opponent fouls, opponent turnovers).">ⓘ</span></h3>
+    <div class="fivemin-grid">
+      <div class="card"><h3>Points Allowed</h3><canvas id="fm-pts-def"></canvas></div>
+      <div class="card"><h3>Opponent 2PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span></h3><canvas id="fm-fg2-def"></canvas></div>
+      <div class="card"><h3>Opponent 3PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span></h3><canvas id="fm-fg3-def"></canvas></div>
+      <div class="card"><h3>Opponent Free Throws Attempted <span class="hint" title="Bar height is TOTAL opponent free throws attempted against this team, ranked by that volume -- fewer trips to the line allowed is better defense. Opponent FT% still shown in small text for reference.">ⓘ</span></h3><canvas id="fm-ft-def"></canvas></div>
+      <div class="card"><h3>Opponent Offensive Rebounds</h3><canvas id="fm-oreb-def"></canvas></div>
+      <div class="card"><h3>Opponent Defensive Rebounds</h3><canvas id="fm-dreb-def"></canvas></div>
+      <div class="card"><h3>Opponent Fouls Committed <span class="hint" title="Fouls the OPPONENT committed against this team -- more is better for this team (more trips to the free-throw line).">ⓘ</span></h3><canvas id="fm-fouls-def"></canvas></div>
+      <div class="card"><h3>Fouls on Opponent</h3><canvas id="fm-fouled-def"></canvas></div>
+      <div class="card"><h3>Opponent Turnovers Forced</h3><canvas id="fm-tov-def"></canvas></div>
+      <div class="card"><h3>Opponent Steals</h3><canvas id="fm-stl-def"></canvas></div>
+    </div>
+  </section>
+
+  <section id="tab-lineups" class="tab-panel">
+    <h1>Line Ups</h1>
+    <p class="muted">The 3 most-used ACTUAL 5-man on-court units for this team, reconstructed from each game's real starters and substitution log (not individual averages). Ranked by an estimated possessions-together count; each lineup's stat line is its real combined production, per game, across only the games it shared the floor.</p>
+    <div class="field-row">
+      <label for="lu-team">Team</label>
+      <select id="lu-team"></select>
+    </div>
+    <div id="lu-content"></div>
+  </section>
+
+  <section id="tab-games" class="tab-panel">
+    <h1>Game Log</h1>
+    <p class="muted">Click a game for the full box score and its scoring flow.</p>
+    <div id="games-list"></div>
+  </section>
+
+  <section id="tab-strengths" class="tab-panel">
+    <h1>Scouting Report</h1>
+    <p class="muted">How an opponent might beat this team -- 5 data-backed weaknesses, drawn from traditional stats, shot-clock shooting splits, offensive/defensive rebounding by shot type, and their weakest 5-minute stretch. Each carries both season-long and last-5-games evidence.</p>
+    <div class="field-row">
+      <label for="ts-team">Team</label>
+      <select id="ts-team"></select>
+    </div>
+    <div id="ts-content"></div>
+  </section>
+
+  <section id="tab-matchup" class="tab-panel">
+    <h1>Matchup Scout</h1>
+    <p class="muted">How one team might beat another, built from season-wide shot-clock and rebounding profiles -- validated against their actual head-to-head when the two teams have already played, with a last-5-games trend alongside the season numbers.</p>
+    <div class="field-row">
+      <label for="mu-team">Team (being scouted)</label>
+      <select id="mu-team"></select>
+      <label for="mu-opponent">Opponent (producing the scout)</label>
+      <select id="mu-opponent"></select>
+    </div>
+    <div id="mu-content"></div>
+  </section>
+</main>
+
+<div id="game-modal" class="modal-overlay">
+  <div class="modal-box">
+    <button id="game-modal-close" class="modal-close" aria-label="Close" title="Close">&times;</button>
+    <div id="game-detail"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
