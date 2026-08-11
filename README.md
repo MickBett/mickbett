@@ -74,6 +74,23 @@ This repo is deploy-ready for [Render](https://render.com)'s free tier —
 4. Wait for the first deploy (a few minutes). Render gives you a URL like
    `https://season-tracker-xxxx.onrender.com` — that's what you share.
 
+### Locking it down to just colleagues
+
+This repo is public on GitHub, so the deployed app has a login gate built
+in — it's a no-op until you turn it on. In the Render dashboard, go to your
+service → **Environment**, and add two variables:
+
+| Key | Value |
+|---|---|
+| `APP_USERNAME` | whatever you want colleagues to type |
+| `APP_PASSWORD` | whatever you want colleagues to type |
+
+Save, and Render redeploys automatically. Every page, static file, and API
+call now requires that one shared login (a browser's native sign-in prompt
+— no code changes needed). Share the username/password with colleagues
+alongside the URL. Running locally without those two variables set, nothing
+changes — no prompt, exactly as before.
+
 **Two things worth knowing about the free tier:**
 - It **spins down after 15 minutes of no traffic** and takes ~30-50s to wake
   back up on the next visit. Normal for a free service, not a bug.
