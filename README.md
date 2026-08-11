@@ -54,10 +54,45 @@ charts.
 - **Trends** — a team's points-for/against or a player's points and FG%,
   game by game across the season
 
+## Sharing it with colleagues (hosting it online)
+
+This repo is deploy-ready for [Render](https://render.com)'s free tier —
+`requirements.txt` and `render.yaml` are already set up for it.
+
+1. **Push this repo to GitHub** (if you haven't already):
+   ```bash
+   # create a new repo at https://github.com/new first, then:
+   git remote add origin https://github.com/<you>/season-tracker.git
+   git branch -M main
+   git push -u origin main
+   ```
+2. **Create a free Render account** at [render.com](https://render.com) and
+   sign in with GitHub.
+3. Click **New → Blueprint**, pick this repo. Render reads `render.yaml`
+   automatically and sets everything up (build command, start command, free
+   plan) — just click **Apply**.
+4. Wait for the first deploy (a few minutes). Render gives you a URL like
+   `https://season-tracker-xxxx.onrender.com` — that's what you share.
+
+**Two things worth knowing about the free tier:**
+- It **spins down after 15 minutes of no traffic** and takes ~30-50s to wake
+  back up on the next visit. Normal for a free service, not a bug.
+- The filesystem **resets on every redeploy**, so any games imported
+  directly on the *hosted* site won't survive the next push. The practical
+  workflow: keep importing games locally (`./run.sh`), then commit and push
+  the updated `season.db` to refresh what colleagues see:
+  ```bash
+  git add season.db
+  git commit -m "Update season data"
+  git push
+  ```
+  Render auto-redeploys on every push to `main`.
+
 ## Data
 
-Everything lives in `season.db` (SQLite) in this folder — no external
-database, nothing leaves your machine. Delete that file to start a fresh
+Everything lives in `season.db` (SQLite) in this folder. Running it locally,
+nothing leaves your machine; once you deploy it (above), the data in that
+file is what colleagues will see. Delete the file locally to start a fresh
 season.
 
 ## Notes / limitations
