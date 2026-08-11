@@ -221,16 +221,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .fm-sw-boxed.fm-sw-blue { color: #4169e1; }
 .fm-sw-boxed.fm-sw-red { color: var(--critical); }
-.fm-sw-line {
+.fm-sw-pill {
   flex: none;
-  width: 18px;
-  height: 0;
-  border-top: 2px dashed var(--text-secondary);
+  width: 20px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  border: 1.5px solid var(--text-secondary);
 }
 
 .fm-read-card { margin-bottom: 20px; }
 .fm-read-card table { font-size: 12.5px; }
-.tier-strong { color: var(--good); font-weight: 700; }
+.tier-strong { color: #4169e1; font-weight: 700; }
 .tier-middle { color: var(--text-secondary); font-weight: 600; }
 .tier-weak { color: var(--critical); font-weight: 700; }
 
@@ -240,6 +242,24 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   gap: 16px;
 }
 .fivemin-grid canvas { max-height: 220px; }
+.fivemin-grid .card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fm-avgrank-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 @media (min-width: 900px) {
   .fivemin-grid { grid-template-columns: repeat(3, 1fr); }
 }

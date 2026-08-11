@@ -105,6 +105,20 @@ changes — no prompt, exactly as before.
   ```
   Render auto-redeploys on every push to `main`.
 
+### Adding it to your phone's home screen
+
+Once it's deployed (above), it can sit on your phone's home screen like a
+real app — same basketball icon, opens full-screen without browser address
+bars, no App Store needed:
+
+- **iPhone**: open the Render URL in **Safari** (must be Safari, not Chrome)
+  → tap the **Share** icon → **Add to Home Screen**.
+- **Android**: open the URL in **Chrome** → tap the **⋮** menu →
+  **Add to Home Screen** (or **Install app**, if offered).
+
+Every colleague does this once on their own phone. It still just loads the
+same Render-hosted site — there's no separate app to build or maintain.
+
 ## Data
 
 Everything lives in `season.db` (SQLite) in this folder. Running it locally,

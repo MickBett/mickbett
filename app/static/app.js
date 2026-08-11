@@ -24,6 +24,7 @@ const COLOR = {
   critical: css.getPropertyValue("--critical").trim(),
   text: css.getPropertyValue("--text-secondary").trim(),
   border: css.getPropertyValue("--border").trim(),
+  surface: css.getPropertyValue("--surface-1").trim(),
 };
 
 Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif";
@@ -1118,6 +1119,25 @@ function fmAvgRankColor(avgRank, pool) {
   return COLOR.text;
 }
 
+// Writes "Avg rank X.X of Y" into the small badge that sits level with the
+// card's <h3> title (id = `${canvasId without "#"}-avgrank`), rather than
+// drawing it inside the canvas -- one glance right next to the title, no
+// extra space taken from the plot area.
+function fmAvgRankBadge(canvasId, avgRank, pool) {
+  const el = document.getElementById(`${canvasId.replace(/^#/, "")}-avgrank`);
+  if (!el) return;
+  if (avgRank == null) {
+    el.textContent = "";
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "";
+  el.textContent = `Avg rank ${avgRank.toFixed(1)} of ${pool}`;
+  const c = fmAvgRankColor(avgRank, pool);
+  el.style.color = c;
+  el.style.borderColor = c;
+}
+
 function fmChart(key, canvasId, labels, data, ranks, color, plugin, maxHeadroom = 1.25, topPadding = 16, yMax = null) {
   fmDestroy(key);
   const dataMax = Math.max(1, ...data.filter(v => v != null));
@@ -1125,57 +1145,23 @@ function fmChart(key, canvasId, labels, data, ranks, color, plugin, maxHeadroom 
   const validRanks = ranks.filter(r => r && r.rank != null);
   const pool = validRanks.length ? validRanks[0].pool : null;
   const avgRank = validRanks.length ? validRanks.reduce((sum, r) => sum + r.rank, 0) / validRanks.length : null;
-
-  const datasets = [{ data, backgroundColor: color, borderRadius: 4, order: 1 }];
-  const scales = {
-    x: { grid: { display: false }, ticks: { color: fmTickColor(ranks), font: { weight: "700" } } },
-    y: {
-      beginAtZero: true,
-      ...(yMax ? { max: yMax } : { suggestedMax: dataMax * maxHeadroom }),
-      grid: { color: COLOR.border },
-    },
-  };
-
-  // Average-rank reference line -- a flat line at the mean of this stat's
-  // 8 segment ranks, plotted on its own reversed right-hand axis (#1 at
-  // the top, matching "lower rank = better"). A flat line rather than the
-  // per-segment rank trend, since the bars/axis ticks already show each
-  // segment's individual rank via colour -- this is specifically the
-  // *average*.
-  if (avgRank != null) {
-    datasets.push({
-      type: "line",
-      label: `Avg rank ${avgRank.toFixed(1)} of ${pool}`,
-      data: labels.map(() => avgRank),
-      yAxisID: "rank",
-      borderColor: fmAvgRankColor(avgRank, pool),
-      borderDash: [6, 4],
-      borderWidth: 2,
-      pointRadius: 0,
-      order: 0,
-    });
-    scales.rank = {
-      position: "right",
-      min: 1, max: pool, reverse: true,
-      grid: { display: false },
-      ticks: { stepSize: 1, font: { size: 9 }, color: COLOR.text },
-    };
-  }
+  fmAvgRankBadge(canvasId, avgRank, pool);
 
   fmCharts[key] = new Chart($(canvasId), {
     type: "bar",
-    data: { labels, datasets },
+    data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 4 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       layout: { padding: { top: topPadding } },
-      plugins: {
-        legend: {
-          display: avgRank != null,
-          position: "top",
-          labels: { boxWidth: 14, font: { size: 10 }, filter: (item) => !!item.text && item.text.startsWith("Avg rank") },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: fmTickColor(ranks), font: { weight: "700" } } },
+        y: {
+          beginAtZero: true,
+          ...(yMax ? { max: yMax } : { suggestedMax: dataMax * maxHeadroom }),
+          grid: { color: COLOR.border },
         },
       },
-      scales,
     },
     plugins: [plugin],
   });
@@ -1256,25 +1242,34 @@ function fmTierCell(rank) {
 
 // A quick per-segment strong/middle/weak read across points, all 3
 // shooting splits, turnovers, and fouls -- the "where does this team
-// actually win/lose stretches of the game" table.
+// actually win/lose stretches of the game" table. FT is ranked by
+// attempts (volume), same convention as its bar chart, not shooting %.
+// "Avg Rank" is that segment's own average across all 6 tracked ranks --
+// one overall read for the whole row, tiered the same way as each stat.
 function renderFiveMinReadTable(rows) {
   $("#fm-read-table").innerHTML = `
     <table>
       <thead><tr>
         <th>Segment</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th>
-        <th class="num">FT%</th><th class="num">Turnovers</th><th class="num">Fouls</th>
+        <th class="num">FT Attempted</th><th class="num">Turnovers</th><th class="num">Fouls</th>
+        <th class="num">Avg Rank</th>
       </tr></thead>
       <tbody>
-        ${rows.map(r => `
+        ${rows.map(r => {
+          const ranks = [r.pts.rank, r.fg2.rank, r.fg3.rank, r.ft.rank, r.tov.rank, r.fouls.rank];
+          const avgRank = ranks.reduce((sum, v) => sum + v, 0) / ranks.length;
+          return `
           <tr>
             <td>${r.label}m</td>
             ${fmTierCell(r.pts.rank)}
             ${fmTierCell(r.fg2.rank)}
             ${fmTierCell(r.fg3.rank)}
-            ${fmTierCell(r.ft_pct_rank.rank)}
+            ${fmTierCell(r.ft.rank)}
             ${fmTierCell(r.tov.rank)}
             ${fmTierCell(r.fouls.rank)}
-          </tr>`).join("")}
+            ${fmTierCell(Math.round(avgRank * 10) / 10)}
+          </tr>`;
+        }).join("")}
       </tbody>
     </table>`;
 }

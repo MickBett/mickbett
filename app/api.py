@@ -550,11 +550,6 @@ def _five_minute_splits_impl(team_id, scope, against):
             rank_key = f"{sk}_a" if sk == "ft" else f"{sk}_pct"
             rank, pool = rank_for(rank_key, i, shooting_higher_is_better)
             entry[sk] = {"m": d[f"{sk}_m"], "a": d[f"{sk}_a"], "pct": d[f"{sk}_pct"], "rank": rank, "pool": pool}
-        # FT ranked by shooting % specifically (as opposed to the volume
-        # rank above) -- for the strong/weak segment read, which is about
-        # shooting quality, not shot volume.
-        ft_pct_rank, ft_pct_pool = rank_for("ft_pct", i, shooting_higher_is_better)
-        entry["ft_pct_rank"] = {"rank": ft_pct_rank, "pool": ft_pct_pool}
         out.append(entry)
     return out
 
