@@ -583,8 +583,8 @@ def matchup_scout(team_id, opponent_id):
             "kind": "caution", "category": p["category"],
             "text": (
                 f"Avoid settling for {label} during the {bucket_label} -- {team_row['name']} defend it well "
-                f"(#{p['team_def_rank']} of {p['pool']}, allowing just {p['team_def_value']}%), and it isn't "
-                f"{opp_row['name']}'s strength either ({p['opp_off_value']}%, #{p['opp_off_rank']} of {p['pool']})."
+                f"(#{p['team_def_rank']} of {p['pool']}, allowing just {p['team_def_value']}%), and it isn't a "
+                f"strength for {opp_row['name']} either ({p['opp_off_value']}%, #{p['opp_off_rank']} of {p['pool']})."
             ),
             "data": p,
         })
