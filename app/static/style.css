@@ -80,13 +80,20 @@ body {
   font-family: var(--font-body);
   background: var(--surface-1);
   color: var(--text-primary);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .topbar {
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 8px 24px;
+  /* env(safe-area-inset-*) matters once this is added to a phone's home
+     screen (viewport-fit=cover draws content edge-to-edge under the
+     notch/status bar there) -- without it, the top slice of this sticky
+     bar renders underneath system chrome, where taps never reach the
+     page at all. Regular browser tabs resolve env() to 0, so this is a
+     no-op everywhere else. */
+  padding: max(8px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 8px max(24px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -381,6 +388,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .player-avatar { width: 26px; height: 26px; }
 .matchup-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .matchup-cell .team-logo { width: 18px; height: 18px; }
+/* Rankings' Team column is logo-only (no name), so it can go as large as
+   the row already allows -- which is the 26px player avatar next to it,
+   the tallest thing in the row. Matching that exactly grows the logo with
+   zero effect on row height. */
+.rk-team-cell { text-align: center; }
+.rk-team-cell .team-logo { width: 26px; height: 26px; padding: 2px; vertical-align: middle; }
 
 .profile-header {
   display: flex;
@@ -582,7 +595,10 @@ body.modal-open { overflow: hidden; }
 .mu-lineup-canvas { max-height: 210px; }
 
 @media (max-width: 760px) {
-  .topbar { gap: 12px; padding: 8px 14px; }
+  .topbar {
+    gap: 12px;
+    padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+  }
   .brand { font-size: 15px; }
   #tabs {
     flex-wrap: nowrap;

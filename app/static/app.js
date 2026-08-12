@@ -292,7 +292,7 @@ async function loadRankingsTable() {
           <tr>
             <td class="num">${r.rank}</td>
             <td>${nameCell(mode === "players" ? playerAvatar(r.photo_url, r.name) : teamLogo(r.team_logo_url, r.name), r.name)}</td>
-            ${mode === "players" ? `<td>${nameCell(teamLogo(r.team_logo_url, r.team), r.team)}</td>` : ""}
+            ${mode === "players" ? `<td class="rk-team-cell" title="${r.team}">${teamLogo(r.team_logo_url, r.team)}</td>` : ""}
             <td class="num">${r.gp}</td>
             ${isPointsSplit ? `
               <td class="num"><strong>${r.ppg}</strong></td>
