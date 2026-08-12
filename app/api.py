@@ -59,9 +59,9 @@ def rankings_metrics():
 
 
 @router.get("/rankings/players")
-def rankings_players(metric: str, min_games: int = 5):
+def rankings_players(metric: str, min_games: int = 5, scope: str = "season"):
     try:
-        ranked, direction = rankings.player_rankings(metric, min_games)
+        ranked, direction = rankings.player_rankings(metric, min_games, scope)
     except (ValueError, StopIteration):
         raise HTTPException(status_code=400, detail=f"Unknown metric: {metric}")
     return {"direction": direction, "rows": ranked}

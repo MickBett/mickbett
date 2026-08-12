@@ -197,15 +197,31 @@ function renderLeaderboard() {
 // -------------------------------------------------------------- rankings -
 let metricsMenu = null;
 let rkTeamsLoaded = false;
-$("#rk-mode").addEventListener("change", () => {
+function updateRkFilterVisibility() {
   const isPlayers = $("#rk-mode").value === "players";
+  const isPointsSplit = isPlayers && $("#rk-metric").value === "trad:ppg";
   $("#rk-mingames-wrap").style.display = isPlayers ? "" : "none";
   $("#rk-team-wrap").style.display = isPlayers ? "" : "none";
+  $("#rk-scope-wrap").style.display = isPointsSplit ? "" : "none";
+}
+$("#rk-mode").addEventListener("change", () => {
+  updateRkFilterVisibility();
   loadRankingsTable();
 });
-$("#rk-metric").addEventListener("change", loadRankingsTable);
+$("#rk-metric").addEventListener("change", () => {
+  updateRkFilterVisibility();
+  loadRankingsTable();
+});
 $("#rk-mingames").addEventListener("change", loadRankingsTable);
 $("#rk-team").addEventListener("change", loadRankingsTable);
+$("#rk-scope").addEventListener("change", () => {
+  // Last 3 Games caps everyone's GP at 3, so the default "5+" min-games
+  // filter would silently show nobody -- drop it to 1+ automatically.
+  if ($("#rk-scope").value === "last3" && Number($("#rk-mingames").value) > 3) {
+    $("#rk-mingames").value = "1";
+  }
+  loadRankingsTable();
+});
 
 async function loadRankings() {
   if (!metricsMenu) {
@@ -222,6 +238,7 @@ async function loadRankings() {
     $("#rk-team").insertAdjacentHTML("beforeend",
       rkTeams.map(t => `<option value="${t.name}">${t.name}</option>`).join(""));
   }
+  updateRkFilterVisibility();
   loadRankingsTable();
 }
 
@@ -232,8 +249,15 @@ async function loadRankingsTable() {
   const el = $("#rankings-table");
   el.innerHTML = "<p class='muted'>Loading…</p>";
 
+  // Ranking players by Points gets a fuller shooting breakdown instead of
+  // a single Value column -- PPG plus makes/attempts/% for each of 2PT,
+  // 3PT and FT, since scoring volume alone doesn't say how it was scored --
+  // plus a Season/Last 3 Games scope, since recent form off the season
+  // total doesn't show up otherwise.
+  const isPointsSplit = mode === "players" && metric === "trad:ppg";
   let url = `/api/rankings/${mode}?metric=${encodeURIComponent(metric)}`;
   if (mode === "players") url += `&min_games=${$("#rk-mingames").value}`;
+  if (isPointsSplit) url += `&scope=${$("#rk-scope").value}`;
   const data = await (await fetch(url)).json();
   // Rank is computed league-wide server-side; the team filter below only
   // narrows which rows are shown -- it never renumbers "#", so a player's
@@ -250,10 +274,6 @@ async function loadRankingsTable() {
   }
 
   const isClock = metric.startsWith("clock:");
-  // Ranking players by Points gets a fuller shooting breakdown instead of
-  // a single Value column -- PPG plus makes/attempts/% for each of 2PT,
-  // 3PT and FT, since scoring volume alone doesn't say how it was scored.
-  const isPointsSplit = mode === "players" && metric === "trad:ppg";
   el.innerHTML = `
     <table>
       <thead><tr>
@@ -275,7 +295,7 @@ async function loadRankingsTable() {
             ${mode === "players" ? `<td>${nameCell(teamLogo(r.team_logo_url, r.team), r.team)}</td>` : ""}
             <td class="num">${r.gp}</td>
             ${isPointsSplit ? `
-              <td class="num">${r.ppg}</td>
+              <td class="num"><strong>${r.ppg}</strong></td>
               <td class="num">${r.fg2_m}</td><td class="num">${r.fg2_a}</td><td class="num">${r.fg2_pct ?? "—"}</td>
               <td class="num">${r.fg3_m}</td><td class="num">${r.fg3_a}</td><td class="num">${r.tp_pct ?? "—"}</td>
               <td class="num">${r.ft_m}</td><td class="num">${r.ft_a}</td><td class="num">${r.ft_pct ?? "—"}</td>

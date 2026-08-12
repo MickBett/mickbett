@@ -60,24 +60,54 @@ def _rank(rows, value_key, direction):
 
 
 # ------------------------------------------------------------- traditional -
-def _trad_player_rows(conn, min_games):
-    rows = conn.execute(
-        """
-        SELECT p.id, p.name, p.photo_url, t.name AS team, t.logo_url AS team_logo_url, COUNT(*) AS gp,
-               SUM(pgs.pts) AS pts, SUM(pgs.reb) AS reb, SUM(pgs.ast) AS ast,
-               SUM(pgs.stl) AS stl, SUM(pgs.blk) AS blk, SUM(pgs.tov) AS tov,
-               SUM(pgs.fgm) AS fgm, SUM(pgs.fga) AS fga,
-               SUM(pgs.tpm) AS tpm, SUM(pgs.tpa) AS tpa,
-               SUM(pgs.ftm) AS ftm, SUM(pgs.fta) AS fta,
-               SUM(pgs.minutes_sec) AS minutes_sec
-        FROM player_game_stats pgs
-        JOIN players p ON p.id = pgs.player_id
-        JOIN teams t ON t.id = pgs.team_id
-        GROUP BY p.id
-        HAVING gp >= ?
-        """,
-        (min_games,),
-    ).fetchall()
+def _trad_player_rows(conn, min_games, scope="season"):
+    """scope: 'season' (every game) or 'last3' (each player's own most
+    recent 3 games played -- recent individual form, not the team's last 3
+    games, since a player can miss games their team plays)."""
+    if scope == "last3":
+        rows = conn.execute(
+            """
+            WITH ranked AS (
+                SELECT pgs.*, ROW_NUMBER() OVER (
+                    PARTITION BY pgs.player_id ORDER BY g.game_date DESC, g.id DESC
+                ) AS rn
+                FROM player_game_stats pgs
+                JOIN games g ON g.id = pgs.game_id
+            )
+            SELECT p.id, p.name, p.photo_url, t.name AS team, t.logo_url AS team_logo_url, COUNT(*) AS gp,
+                   SUM(ranked.pts) AS pts, SUM(ranked.reb) AS reb, SUM(ranked.ast) AS ast,
+                   SUM(ranked.stl) AS stl, SUM(ranked.blk) AS blk, SUM(ranked.tov) AS tov,
+                   SUM(ranked.fgm) AS fgm, SUM(ranked.fga) AS fga,
+                   SUM(ranked.tpm) AS tpm, SUM(ranked.tpa) AS tpa,
+                   SUM(ranked.ftm) AS ftm, SUM(ranked.fta) AS fta,
+                   SUM(ranked.minutes_sec) AS minutes_sec
+            FROM ranked
+            JOIN players p ON p.id = ranked.player_id
+            JOIN teams t ON t.id = ranked.team_id
+            WHERE ranked.rn <= 3
+            GROUP BY p.id
+            HAVING gp >= ?
+            """,
+            (min_games,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.name, p.photo_url, t.name AS team, t.logo_url AS team_logo_url, COUNT(*) AS gp,
+                   SUM(pgs.pts) AS pts, SUM(pgs.reb) AS reb, SUM(pgs.ast) AS ast,
+                   SUM(pgs.stl) AS stl, SUM(pgs.blk) AS blk, SUM(pgs.tov) AS tov,
+                   SUM(pgs.fgm) AS fgm, SUM(pgs.fga) AS fga,
+                   SUM(pgs.tpm) AS tpm, SUM(pgs.tpa) AS tpa,
+                   SUM(pgs.ftm) AS ftm, SUM(pgs.fta) AS fta,
+                   SUM(pgs.minutes_sec) AS minutes_sec
+            FROM player_game_stats pgs
+            JOIN players p ON p.id = pgs.player_id
+            JOIN teams t ON t.id = pgs.team_id
+            GROUP BY p.id
+            HAVING gp >= ?
+            """,
+            (min_games,),
+        ).fetchall()
     out = []
     for r in rows:
         gp = r["gp"] or 1
@@ -273,14 +303,14 @@ def _clock_rows(conn, entity, stat, bucket, game_ids_by_team=None, against=False
 
 
 # ------------------------------------------------------------------- public -
-def player_rankings(metric_key, min_games=5):
+def player_rankings(metric_key, min_games=5, scope="season"):
     conn = db.get_conn()
     try:
         kind, *rest = metric_key.split(":")
         if kind == "trad":
             stat = rest[0]
             direction = next(d for k, l, d in TRAD_PLAYER_METRICS if k == stat)
-            rows = _trad_player_rows(conn, min_games)
+            rows = _trad_player_rows(conn, min_games, scope)
             return _rank(rows, stat, direction), direction
         elif kind == "clock":
             stat, bucket = rest
