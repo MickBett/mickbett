@@ -61,30 +61,37 @@ def _rank(rows, value_key, direction):
 
 # ------------------------------------------------------------- traditional -
 def _trad_player_rows(conn, min_games, scope="season"):
-    """scope: 'season' (every game) or 'last3' (each player's own most
-    recent 3 games played -- recent individual form, not the team's last 3
-    games, since a player can miss games their team plays)."""
+    """scope: 'season' (every game) or 'last3' (each TEAM's own most recent
+    3 games -- not each player's individually. With heavy roster turnover,
+    "last 3 games" should mean a snapshot of who's actually playing for a
+    team right now and how they're performing, not stats that could span
+    games from weeks ago for a player who barely features. A player who's
+    only appeared in 1 of their team's last 3 games shows gp=1, not
+    padded out with older games from before a trade/signing/return."""
     if scope == "last3":
         rows = conn.execute(
             """
-            WITH ranked AS (
-                SELECT pgs.*, ROW_NUMBER() OVER (
-                    PARTITION BY pgs.player_id ORDER BY g.game_date DESC, g.id DESC
+            WITH team_games AS (
+                SELECT tgs.team_id, tgs.game_id, ROW_NUMBER() OVER (
+                    PARTITION BY tgs.team_id ORDER BY g.game_date DESC, g.id DESC
                 ) AS rn
-                FROM player_game_stats pgs
-                JOIN games g ON g.id = pgs.game_id
+                FROM team_game_stats tgs
+                JOIN games g ON g.id = tgs.game_id
+            ),
+            recent_team_games AS (
+                SELECT team_id, game_id FROM team_games WHERE rn <= 3
             )
             SELECT p.id, p.name, p.photo_url, t.name AS team, t.logo_url AS team_logo_url, COUNT(*) AS gp,
-                   SUM(ranked.pts) AS pts, SUM(ranked.reb) AS reb, SUM(ranked.ast) AS ast,
-                   SUM(ranked.stl) AS stl, SUM(ranked.blk) AS blk, SUM(ranked.tov) AS tov,
-                   SUM(ranked.fgm) AS fgm, SUM(ranked.fga) AS fga,
-                   SUM(ranked.tpm) AS tpm, SUM(ranked.tpa) AS tpa,
-                   SUM(ranked.ftm) AS ftm, SUM(ranked.fta) AS fta,
-                   SUM(ranked.minutes_sec) AS minutes_sec
-            FROM ranked
-            JOIN players p ON p.id = ranked.player_id
-            JOIN teams t ON t.id = ranked.team_id
-            WHERE ranked.rn <= 3
+                   SUM(pgs.pts) AS pts, SUM(pgs.reb) AS reb, SUM(pgs.ast) AS ast,
+                   SUM(pgs.stl) AS stl, SUM(pgs.blk) AS blk, SUM(pgs.tov) AS tov,
+                   SUM(pgs.fgm) AS fgm, SUM(pgs.fga) AS fga,
+                   SUM(pgs.tpm) AS tpm, SUM(pgs.tpa) AS tpa,
+                   SUM(pgs.ftm) AS ftm, SUM(pgs.fta) AS fta,
+                   SUM(pgs.minutes_sec) AS minutes_sec
+            FROM player_game_stats pgs
+            JOIN recent_team_games rtg ON rtg.team_id = pgs.team_id AND rtg.game_id = pgs.game_id
+            JOIN players p ON p.id = pgs.player_id
+            JOIN teams t ON t.id = pgs.team_id
             GROUP BY p.id
             HAVING gp >= ?
             """,
