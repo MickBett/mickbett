@@ -196,12 +196,16 @@ function renderLeaderboard() {
 
 // -------------------------------------------------------------- rankings -
 let metricsMenu = null;
+let rkTeamsLoaded = false;
 $("#rk-mode").addEventListener("change", () => {
-  $("#rk-mingames-wrap").style.display = $("#rk-mode").value === "players" ? "" : "none";
+  const isPlayers = $("#rk-mode").value === "players";
+  $("#rk-mingames-wrap").style.display = isPlayers ? "" : "none";
+  $("#rk-team-wrap").style.display = isPlayers ? "" : "none";
   loadRankingsTable();
 });
 $("#rk-metric").addEventListener("change", loadRankingsTable);
 $("#rk-mingames").addEventListener("change", loadRankingsTable);
+$("#rk-team").addEventListener("change", loadRankingsTable);
 
 async function loadRankings() {
   if (!metricsMenu) {
@@ -211,6 +215,12 @@ async function loadRankings() {
       <optgroup label="${g.group}">
         ${g.items.map(i => `<option value="${i.key}">${i.label}</option>`).join("")}
       </optgroup>`).join("");
+  }
+  if (!rkTeamsLoaded) {
+    rkTeamsLoaded = true;
+    const rkTeams = await (await fetch("/api/teams")).json();
+    $("#rk-team").insertAdjacentHTML("beforeend",
+      rkTeams.map(t => `<option value="${t.name}">${t.name}</option>`).join(""));
   }
   loadRankingsTable();
 }
@@ -225,10 +235,17 @@ async function loadRankingsTable() {
   let url = `/api/rankings/${mode}?metric=${encodeURIComponent(metric)}`;
   if (mode === "players") url += `&min_games=${$("#rk-mingames").value}`;
   const data = await (await fetch(url)).json();
-  const rows = data.rows;
+  // Rank is computed league-wide server-side; the team filter below only
+  // narrows which rows are shown -- it never renumbers "#", so a player's
+  // rank still reflects where they stand against the whole league, not
+  // just their own team.
+  const teamFilter = mode === "players" ? $("#rk-team").value : "";
+  const rows = teamFilter ? data.rows.filter(r => r.team === teamFilter) : data.rows;
 
   if (!rows.length) {
-    el.innerHTML = "<p class='muted'>No one qualifies yet for this category (try lowering the min-games filter).</p>";
+    el.innerHTML = teamFilter
+      ? "<p class='muted'>No one on this team qualifies yet for this category (try lowering the min-games filter).</p>"
+      : "<p class='muted'>No one qualifies yet for this category (try lowering the min-games filter).</p>";
     return;
   }
 
