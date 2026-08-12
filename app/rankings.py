@@ -81,6 +81,10 @@ def _trad_player_rows(conn, min_games):
     out = []
     for r in rows:
         gp = r["gp"] or 1
+        # Box-score convention: fgm/fga are ALL field goals (2s + 3s combined),
+        # tpm/tpa are the 3-point subset of those -- so 2PT makes/attempts is
+        # just the remainder, not a separately-tracked stat.
+        fg2_m, fg2_a = r["fgm"] - r["tpm"], r["fga"] - r["tpa"]
         out.append({
             "id": r["id"], "name": r["name"], "photo_url": r["photo_url"],
             "team": r["team"], "team_logo_url": r["team_logo_url"], "gp": r["gp"],
@@ -91,6 +95,10 @@ def _trad_player_rows(conn, min_games):
             "fg_pct": round(r["fgm"] / r["fga"] * 100, 1) if r["fga"] else None,
             "tp_pct": round(r["tpm"] / r["tpa"] * 100, 1) if r["tpa"] else None,
             "ft_pct": round(r["ftm"] / r["fta"] * 100, 1) if r["fta"] else None,
+            "fg2_m": fg2_m, "fg2_a": fg2_a,
+            "fg2_pct": round(fg2_m / fg2_a * 100, 1) if fg2_a else None,
+            "fg3_m": r["tpm"], "fg3_a": r["tpa"],
+            "ft_m": r["ftm"], "ft_a": r["fta"],
         })
     return out
 

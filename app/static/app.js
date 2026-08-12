@@ -250,12 +250,22 @@ async function loadRankingsTable() {
   }
 
   const isClock = metric.startsWith("clock:");
+  // Ranking players by Points gets a fuller shooting breakdown instead of
+  // a single Value column -- PPG plus makes/attempts/% for each of 2PT,
+  // 3PT and FT, since scoring volume alone doesn't say how it was scored.
+  const isPointsSplit = mode === "players" && metric === "trad:ppg";
   el.innerHTML = `
     <table>
       <thead><tr>
         <th class="num">#</th><th>${mode === "players" ? "Player" : "Team"}</th>
         ${mode === "players" ? "<th>Team</th>" : ""}
-        <th class="num">GP</th><th class="num">Value</th>
+        <th class="num">GP</th>
+        ${isPointsSplit ? `
+          <th class="num">PPG</th>
+          <th class="num">2PM</th><th class="num">2PA</th><th class="num">2P%</th>
+          <th class="num">3PM</th><th class="num">3PA</th><th class="num">3P%</th>
+          <th class="num">FTM</th><th class="num">FTA</th><th class="num">FT%</th>
+        ` : `<th class="num">Value</th>`}
       </tr></thead>
       <tbody>
         ${rows.map(r => `
@@ -264,7 +274,12 @@ async function loadRankingsTable() {
             <td>${nameCell(mode === "players" ? playerAvatar(r.photo_url, r.name) : teamLogo(r.team_logo_url, r.name), r.name)}</td>
             ${mode === "players" ? `<td>${nameCell(teamLogo(r.team_logo_url, r.team), r.team)}</td>` : ""}
             <td class="num">${r.gp}</td>
-            <td class="num">${isClock ? (r.a !== null && r.m !== null ? `${r.value} (${r.m}/${r.a})` : r.value) : r.value ?? r[metric.split(":")[1]] ?? "—"}</td>
+            ${isPointsSplit ? `
+              <td class="num">${r.ppg}</td>
+              <td class="num">${r.fg2_m}</td><td class="num">${r.fg2_a}</td><td class="num">${r.fg2_pct ?? "—"}</td>
+              <td class="num">${r.fg3_m}</td><td class="num">${r.fg3_a}</td><td class="num">${r.tp_pct ?? "—"}</td>
+              <td class="num">${r.ft_m}</td><td class="num">${r.ft_a}</td><td class="num">${r.ft_pct ?? "—"}</td>
+            ` : `<td class="num">${isClock ? (r.a !== null && r.m !== null ? `${r.value} (${r.m}/${r.a})` : r.value) : r.value ?? r[metric.split(":")[1]] ?? "—"}</td>`}
           </tr>`).join("")}
       </tbody>
     </table>`;

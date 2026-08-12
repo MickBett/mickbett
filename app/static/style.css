@@ -278,7 +278,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 800;
 }
 .chart-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-#sc-clock-table, #zone-table { overflow-x: auto; }
+#sc-clock-table, #zone-table, #rankings-table { overflow-x: auto; }
 #zone-table table { font-size: 12.5px; }
 /* tighter than the zone table -- 9 columns need to fit in a half-width
    card now that the two charts sit side by side -- so every column,
