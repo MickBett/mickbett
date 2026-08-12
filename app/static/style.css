@@ -35,6 +35,11 @@
   --good: #1b6b44;       /* makes */
   --critical: #c0392b;   /* misses */
   --on-accent: #effbf3;
+  --topbar-bg: #123c27;      /* ribbon -- slightly darker than --series-1 */
+  --topbar-text: #d7e6da;
+  --topbar-text-muted: #9db5a4;
+  --topbar-hover: rgba(255, 255, 255, 0.1);
+  --on-topbar-active: #1c2e20;  /* fixed dark text for the gold active pill, both themes */
   --font-display: "League Spartan", "Figtree", system-ui, sans-serif;
   --font-body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
@@ -80,30 +85,31 @@ body {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 12px 24px;
+  gap: 20px;
+  padding: 8px 24px;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--surface-1);
+  background: var(--topbar-bg);
   z-index: 10;
 }
-.brand { font-family: var(--font-display); font-weight: 800; font-size: 19px; letter-spacing: 0.01em; }
-#tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.brand { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: 0.01em; color: var(--topbar-text); flex: none; }
+#tabs { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
 .tab-btn {
   background: none;
   border: none;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-secondary);
+  font-size: 13.5px;
+  color: var(--topbar-text-muted);
   cursor: pointer;
 }
-.tab-btn:hover { background: var(--surface-2); }
-.tab-btn.active { background: var(--series-1); color: var(--on-accent); font-weight: 600; }
-.summary-pill { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; }
+.tab-btn:hover { background: var(--topbar-hover); color: var(--topbar-text); }
+.tab-btn.active { background: var(--series-2); color: var(--on-topbar-active); font-weight: 600; }
+.summary-pill { font-size: 12.5px; color: var(--topbar-text-muted); white-space: nowrap; }
 
-main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px; overflow-x: hidden; }
+code { overflow-wrap: anywhere; }
 h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.005em; margin: 0 0 6px; }
 h3 { font-size: 14px; margin: 0 0 10px; color: var(--text-secondary); font-weight: 600; }
 .muted { color: var(--text-secondary); font-size: 13.5px; margin-top: 0; }
@@ -576,7 +582,18 @@ body.modal-open { overflow: hidden; }
 .mu-lineup-canvas { max-height: 210px; }
 
 @media (max-width: 760px) {
-  .topbar { flex-wrap: wrap; }
+  .topbar { gap: 12px; padding: 8px 14px; }
+  .brand { font-size: 15px; }
+  #tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    min-width: 0;
+  }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: none; white-space: nowrap; padding: 6px 10px; font-size: 13px; }
+  .summary-pill { display: none; }
   .shotchart-grid { grid-template-columns: 1fr; }
   .fivemin-grid { grid-template-columns: 1fr; }
   .lineup-grid { grid-template-columns: 1fr; }
