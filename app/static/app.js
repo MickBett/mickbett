@@ -1468,17 +1468,19 @@ function muStatTile(s, cls) {
 }
 
 // Rank shown inline in a distinct (monospace) font from the value, so it
-// reads as metadata rather than part of the number itself.
-function muRankSpan(rank) {
-  return `<span class="mu-shotclock-rank">#${rank}</span>`;
+// reads as metadata rather than part of the number itself -- and only the
+// "#N" itself picks up the blue/red top-3/bottom-3 tier colour, not the
+// whole cell.
+function muRankSpan(rank, pool) {
+  return `<span class="mu-shotclock-rank ${muTierClass(rank, pool)}">#${rank}</span>`;
 }
 function muClockPctCell(c) {
-  return c ? `${c.value}% ${muRankSpan(c.rank)}` : "—";
+  return c ? `${c.value}% ${muRankSpan(c.rank, c.pool)}` : "—";
 }
 function muClockPtsCell(row) {
   if (!row.pts) return "—";
   const pctPart = row.pct_of_total_pts != null ? ` (${row.pct_of_total_pts}%)` : "";
-  return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank)}`;
+  return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank, row.pts.pool)}`;
 }
 
 function muShotClockTableHtml(clockData) {
@@ -1516,10 +1518,10 @@ async function updateMatchup() {
         <span class="mu-toprow-record">${data.record}</span>
         <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
       </div>
-      ${muShotClockTableHtml(clockData)}
       <div class="mu-stat-row">
         ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
       </div>
+      ${muShotClockTableHtml(clockData)}
       <div class="mu-stat-row mu-stat-row-end">
         ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
       </div>

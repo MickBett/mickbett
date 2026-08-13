@@ -591,6 +591,8 @@ body.modal-open { overflow: hidden; }
   color: var(--text-muted);
   margin-left: 4px;
 }
+.mu-shotclock-rank.tier-top { color: #4169e1; }
+.mu-shotclock-rank.tier-bottom { color: var(--critical); }
 
 .mu-key {
   display: flex;
