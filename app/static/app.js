@@ -1283,7 +1283,7 @@ function renderFiveMinSet(rows, suffix, against) {
 // everywhere without per-stat direction flips.
 function fmTier(rank) {
   if (rank == null) return { label: "—", cls: "" };
-  if (rank <= 3) return { label: "Strong", cls: "tier-strong" };
+  if (rank < 4) return { label: "Strong", cls: "tier-strong" };
   if (rank <= 7) return { label: "Middle", cls: "tier-middle" };
   return { label: "Weak", cls: "tier-weak" };
 }
@@ -1302,9 +1302,8 @@ function renderFiveMinReadTable(rows) {
   $("#fm-read-table").innerHTML = `
     <table>
       <thead><tr>
-        <th>Segment</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th>
+        <th class="num">Avg Rank</th><th>Segment</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th>
         <th class="num">FT Attempted</th><th class="num">Turnovers</th><th class="num">Fouls</th>
-        <th class="num">Avg Rank</th>
       </tr></thead>
       <tbody>
         ${rows.map(r => {
@@ -1312,6 +1311,7 @@ function renderFiveMinReadTable(rows) {
           const avgRank = ranks.reduce((sum, v) => sum + v, 0) / ranks.length;
           return `
           <tr>
+            ${fmTierCell(Math.round(avgRank * 10) / 10)}
             <td>${r.label}m</td>
             ${fmTierCell(r.pts.rank)}
             ${fmTierCell(r.fg2.rank)}
@@ -1319,7 +1319,6 @@ function renderFiveMinReadTable(rows) {
             ${fmTierCell(r.ft.rank)}
             ${fmTierCell(r.tov.rank)}
             ${fmTierCell(r.fouls.rank)}
-            ${fmTierCell(Math.round(avgRank * 10) / 10)}
           </tr>`;
         }).join("")}
       </tbody>
