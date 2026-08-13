@@ -1509,7 +1509,7 @@ function muShotClockTableHtml(clockData, title) {
 // stay a plain frequency.
 function muOrebShotCell(c) {
   if (!c || !c.attempts) return "—";
-  return `${c.makes}/${c.attempts} (${c.make_pct}%)`;
+  return `${c.makes}/${c.attempts}<span class="mu-oreb-pct">(${c.make_pct}%)</span>`;
 }
 function muOrebRateCell(c) {
   return c ? `${c.freq_pct}%` : "—";

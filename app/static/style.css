@@ -600,6 +600,7 @@ body.modal-open { overflow: hidden; }
 }
 .mu-shotclock-rank.tier-top { color: #4169e1; }
 .mu-shotclock-rank.tier-bottom { color: var(--critical); }
+.mu-oreb-pct { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
 
 .mu-key {
   display: flex;
