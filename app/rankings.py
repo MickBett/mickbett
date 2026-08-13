@@ -570,38 +570,78 @@ def team_weaknesses(team_id, top_n=4):
 
 
 # ------------------------------------------------------------ matchup scout
-def team_season_table(team_id):
-    """Plain column table of one team's season stats -- record plus every
-    TRAD_TEAM_METRICS value, each with its league rank. No narrative, no
-    opponent comparison -- just the numbers, one row per stat."""
+def _dreb_ranked(conn):
+    """Defensive rebounds per game, ranked -- pulled directly from
+    team_game_stats.dreb since (unlike offensive boards) it isn't split by
+    shot type or shot-clock bucket anywhere else in the app."""
+    rows = conn.execute(
+        """SELECT team_id AS id, SUM(dreb) AS total, COUNT(*) AS gp
+           FROM team_game_stats GROUP BY team_id"""
+    ).fetchall()
+    out = [{"id": r["id"], "value": round(r["total"] / r["gp"], 1)} for r in rows if r["gp"]]
+    return _rank(out, "value", "desc")
+
+
+# (key, label, source, direction) -- source: "trad" (TRAD_TEAM_METRICS-style
+# per-game average), "clock" (season-wide clock:*:overall stat), or "dreb".
+_TOP_ROW_BIG = [
+    ("ppg", "PPG", "trad", "desc"),
+    ("papg", "PAPG", "trad", "asc"),
+    ("2pt_pct", "2PT%", "clock", "desc"),
+    ("3pt_pct", "3PT%", "clock", "desc"),
+    ("oreb_2pt", "OREB (2PT)", "clock", "desc"),
+    ("oreb_3pt", "OREB (3PT)", "clock", "desc"),
+    ("dreb", "DREB", "dreb", "desc"),
+]
+_TOP_ROW_SMALL = [
+    ("apg", "AST", "trad", "desc"),
+    ("spg", "STL", "trad", "desc"),
+    ("bpg", "BLK", "trad", "desc"),
+    ("topg", "TOV", "trad", "asc"),
+    ("ft_pct", "FT%", "trad", "desc"),
+]
+
+
+def team_top_row(team_id):
+    """Backs the Matchup Scout tab's top-line stat strip: team logo +
+    record, then a row of headline stats (bigger, blue/red-shaded by
+    top-3/bottom-3 league rank) followed by a row of secondary stats
+    (smaller, unshaded) -- rank shown under every number."""
     conn = db.get_conn()
     try:
         season_trad = _trad_team_rows(conn)
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
+        dreb_ranked = _dreb_ranked(conn)
 
-        def fmt(key, val):
-            if key == "win_pct":
-                return f"{round(val * 100, 1)}%"
-            if key.endswith("_pct"):
-                return f"{val}%"
-            if key == "diff":
-                return f"{'+' if val > 0 else ''}{val}"
-            return val
+        def build(key, label, source, direction):
+            if source == "trad":
+                ranked = _rank(season_trad, key, direction)
+                r = next((x for x in ranked if x["id"] == team_id), None)
+                val = r[key] if r else None
+            elif source == "clock":
+                ranked = _rank(_clock_rows(conn, "team", key, "overall"), "value", direction)
+                r = next((x for x in ranked if x["id"] == team_id), None)
+                val = r["value"] if r else None
+            else:
+                ranked = dreb_ranked
+                r = next((x for x in ranked if x["id"] == team_id), None)
+                val = r["value"] if r else None
+            if r is None:
+                return None
+            display = f"{val}%" if label.endswith("%") else val
+            return {"label": label, "value": display, "rank": r["rank"], "pool": len(ranked)}
 
-        rows = [{"label": "Record", "value": f"{team_row['wins']}-{team_row['losses']}", "rank": None, "pool": None}]
-        for key, label, direction in TRAD_TEAM_METRICS:
-            ranked = _rank(season_trad, key, direction)
-            r = next((x for x in ranked if x["id"] == team_id), None)
-            if not r:
-                continue
-            rows.append({"label": label, "value": fmt(key, r[key]), "rank": r["rank"], "pool": len(ranked)})
+        big = [x for x in (build(*spec) for spec in _TOP_ROW_BIG) if x]
+        small = [x for x in (build(*spec) for spec in _TOP_ROW_SMALL) if x]
 
         return {
             "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["team_logo_url"]},
+            "record": f"{team_row['wins']}-{team_row['losses']}",
             "gp": team_row["gp"],
-            "rows": rows,
+            "big": big,
+            "small": small,
         }
     finally:
         conn.close()

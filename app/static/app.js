@@ -1450,26 +1450,42 @@ async function loadMatchupOptions() {
   updateMatchup();
 }
 
+// Blue for top-3 league rank, red for bottom-3, plain for the middle --
+// same tier boundary as everywhere else in the app.
+function muTierClass(rank, pool) {
+  if (rank <= 3) return "tier-top";
+  if (rank > pool - 3) return "tier-bottom";
+  return "";
+}
+
+function muStatTile(s, cls) {
+  return `
+    <div class="${cls} ${muTierClass(s.rank, s.pool)}">
+      <div class="mu-stat-label">${s.label}</div>
+      <div class="mu-stat-value">${s.value}</div>
+      <div class="mu-stat-rank">#${s.rank} of ${s.pool}</div>
+    </div>`;
+}
+
 async function updateMatchup() {
   const teamId = $("#mu-team").value;
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const data = await (await fetch(`/api/teams/${teamId}/season-table`)).json();
+  const data = await (await fetch(`/api/teams/${teamId}/top-row`)).json();
 
   el.innerHTML = `
     <div class="card">
-      <h3>${teamLogo(data.team.logo_url, data.team.name)} ${data.team.name} — season stats <span class="muted" style="font-weight:400">(${data.gp} games)</span></h3>
-      <table>
-        <thead><tr><th>Stat</th><th class="num">Value</th><th class="num">League Rank</th></tr></thead>
-        <tbody>
-          ${data.rows.map(r => `
-            <tr>
-              <td>${r.label}</td>
-              <td class="num">${r.value}</td>
-              <td class="num">${r.rank != null ? `#${r.rank} of ${r.pool}` : "—"}</td>
-            </tr>`).join("")}
-        </tbody>
-      </table>
+      <div class="mu-toprow">
+        <img class="mu-toprow-logo" src="${data.team.logo_url || ""}" alt="${data.team.name}" onerror="this.remove()">
+        <span class="mu-toprow-record">${data.record}</span>
+        <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
+      </div>
+      <div class="mu-stat-row">
+        ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
+      </div>
+      <div class="mu-stat-row mu-stat-row-end">
+        ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
+      </div>
     </div>`;
 }

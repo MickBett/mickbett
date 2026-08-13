@@ -544,6 +544,41 @@ body.modal-open { overflow: hidden; }
 .strength-chart-wrap { margin-top: 14px; height: 240px; }
 
 /* ------------------------------------------------------ matchup scout -- */
+.mu-toprow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.mu-toprow-logo { width: 32px; height: 32px; object-fit: contain; flex: none; }
+.mu-toprow-record { font-family: var(--font-display); font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1; }
+.mu-toprow-team { font-size: 13px; color: var(--text-secondary); }
+
+.mu-stat-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mu-stat-row-end { justify-content: flex-end; gap: 22px; }
+.mu-stat {
+  flex: none;
+  text-align: center;
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+.mu-stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; white-space: nowrap; }
+.mu-stat-value { font-family: var(--font-display); font-weight: 800; font-size: 32px; line-height: 1.15; color: var(--text-primary); white-space: nowrap; }
+.mu-stat-rank { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }
+.mu-stat.tier-top { background: rgba(65, 105, 225, 0.12); }
+.mu-stat.tier-top .mu-stat-value { color: #4169e1; }
+.mu-stat.tier-bottom { background: rgba(192, 57, 43, 0.1); }
+.mu-stat.tier-bottom .mu-stat-value { color: var(--critical); }
+
+.mu-stat-small { flex: none; text-align: center; padding: 2px 10px; }
+.mu-stat-small .mu-stat-label { font-size: 11px; }
+.mu-stat-small .mu-stat-value { font-family: var(--font-display); font-weight: 700; font-size: 18px; line-height: 1.15; color: var(--text-primary); white-space: nowrap; }
+.mu-stat-small .mu-stat-rank { font-size: 10px; }
+.mu-stat-small.tier-top .mu-stat-value { color: #4169e1; }
+.mu-stat-small.tier-bottom .mu-stat-value { color: var(--critical); }
+
 .mu-key {
   display: flex;
   align-items: flex-start;
