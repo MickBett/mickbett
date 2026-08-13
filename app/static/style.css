@@ -583,7 +583,7 @@ body.modal-open { overflow: hidden; }
    stretching the full card width the way the plain `table` default
    would, so it doesn't run past where the OREB tiles sit in the row
    above it. */
-.mu-shotclock-table { width: auto; max-width: fit-content; font-size: 12.5px; }
+.mu-shotclock-table { width: auto; max-width: fit-content; font-size: 12.5px; margin-bottom: 18px; }
 .mu-shotclock-table th, .mu-shotclock-table td { padding: 5px 10px; white-space: nowrap; }
 .mu-shotclock-rank {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

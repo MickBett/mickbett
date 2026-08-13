@@ -1469,22 +1469,22 @@ function muStatTile(s, cls) {
 
 // Rank shown inline in a distinct (monospace) font from the value, so it
 // reads as metadata rather than part of the number itself.
-function muRankSpan(rank, pool) {
-  return `<span class="mu-shotclock-rank">#${rank} of ${pool}</span>`;
+function muRankSpan(rank) {
+  return `<span class="mu-shotclock-rank">#${rank}</span>`;
 }
 function muClockPctCell(c) {
-  return c ? `${c.value}% ${muRankSpan(c.rank, c.pool)}` : "—";
+  return c ? `${c.value}% ${muRankSpan(c.rank)}` : "—";
 }
 function muClockPtsCell(row) {
   if (!row.pts) return "—";
   const pctPart = row.pct_of_total_pts != null ? ` (${row.pct_of_total_pts}%)` : "";
-  return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank, row.pts.pool)}`;
+  return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank)}`;
 }
 
 function muShotClockTableHtml(clockData) {
   if (!clockData || !clockData.rows.length) return "";
   return `
-    <h3 style="margin-top:22px">Offense by shot clock</h3>
+    <h3 style="margin-top:0">Offense by shot clock</h3>
     <table class="mu-shotclock-table">
       <thead><tr><th>Shot clock</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th></tr></thead>
       <tbody>
@@ -1516,12 +1516,12 @@ async function updateMatchup() {
         <span class="mu-toprow-record">${data.record}</span>
         <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
       </div>
+      ${muShotClockTableHtml(clockData)}
       <div class="mu-stat-row">
         ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
       </div>
       <div class="mu-stat-row mu-stat-row-end">
         ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
       </div>
-      ${muShotClockTableHtml(clockData)}
     </div>`;
 }
