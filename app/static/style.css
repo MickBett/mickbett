@@ -579,6 +579,19 @@ body.modal-open { overflow: hidden; }
 .mu-stat-small.tier-top .mu-stat-value { color: #4169e1; }
 .mu-stat-small.tier-bottom .mu-stat-value { color: var(--critical); }
 
+/* Condensed and only as wide as its content needs -- keeps it from
+   stretching the full card width the way the plain `table` default
+   would, so it doesn't run past where the OREB tiles sit in the row
+   above it. */
+.mu-shotclock-table { width: auto; max-width: fit-content; font-size: 12.5px; }
+.mu-shotclock-table th, .mu-shotclock-table td { padding: 5px 10px; white-space: nowrap; }
+.mu-shotclock-rank {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
 .mu-key {
   display: flex;
   align-items: flex-start;
