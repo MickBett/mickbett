@@ -1474,13 +1474,17 @@ function muStatTile(s, cls) {
 function muRankSpan(rank, pool) {
   return `<span class="mu-shotclock-rank ${muTierClass(rank, pool)}">#${rank}</span>`;
 }
+// Main line is the headline number (makes/attempts for 2PT%/3PT%, plain
+// value for points); % and rank both drop to a smaller second line.
 function muClockPctCell(c) {
-  return c ? `${c.value}% ${muRankSpan(c.rank, c.pool)}` : "—";
+  if (!c) return "—";
+  const main = c.makes != null && c.attempts != null ? `${c.makes}/${c.attempts}` : `${c.value}%`;
+  return `${main}<span class="mu-oreb-pct">(${c.value}%) ${muRankSpan(c.rank, c.pool)}</span>`;
 }
 function muClockPtsCell(row) {
   if (!row.pts) return "—";
-  const pctPart = row.pct_of_total_pts != null ? ` (${row.pct_of_total_pts}%)` : "";
-  return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank, row.pts.pool)}`;
+  const pctPart = row.pct_of_total_pts != null ? `(${row.pct_of_total_pts}%) ` : "";
+  return `${row.pts.value}<span class="mu-oreb-pct">${pctPart}${muRankSpan(row.pts.rank, row.pts.pool)}</span>`;
 }
 
 function muShotClockTableHtml(clockData, title) {

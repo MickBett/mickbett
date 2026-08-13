@@ -699,7 +699,12 @@ def team_shot_clock_offense(team_id):
         total_ppg = team_row["ppg"]
 
         def cell(ranked, r):
-            return {"value": r["value"], "rank": r["rank"], "pool": len(ranked)} if r else None
+            if not r:
+                return None
+            out = {"value": r["value"], "rank": r["rank"], "pool": len(ranked)}
+            if "m" in r.keys() and "a" in r.keys():
+                out["makes"], out["attempts"] = r["m"], r["a"]
+            return out
 
         rows = []
         for bucket, label in _SHOT_CLOCK_BUCKETS:
@@ -741,7 +746,12 @@ def team_shot_clock_defense(team_id):
         total_papg = team_row["papg"]
 
         def cell(ranked, r):
-            return {"value": r["value"], "rank": r["rank"], "pool": len(ranked)} if r else None
+            if not r:
+                return None
+            out = {"value": r["value"], "rank": r["rank"], "pool": len(ranked)}
+            if "m" in r.keys() and "a" in r.keys():
+                out["makes"], out["attempts"] = r["m"], r["a"]
+            return out
 
         rows = []
         for bucket, label in _SHOT_CLOCK_BUCKETS:
