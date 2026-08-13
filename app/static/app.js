@@ -1504,35 +1504,40 @@ function muShotClockTableHtml(clockData, title) {
 }
 
 // "What happens next" after an offensive rebound -- 2PT/3PT cells show
-// how often it leads to that shot, with the resulting shooting % in
-// brackets; turnover/fouled are just how often, no shooting % to add.
-function muOrebOutcomeCell(c) {
-  if (!c) return "—";
-  const fgPart = c.make_pct != null ? ` (${c.make_pct}% FG)` : "";
-  return `${c.freq_pct}%${fgPart}`;
+// 2PT/3PT cells: makes/attempts and % (the shots that actually followed
+// the rebound). Turnover/fouled have no makes/attempts concept, so they
+// stay a plain frequency.
+function muOrebShotCell(c) {
+  if (!c || !c.attempts) return "—";
+  return `${c.makes}/${c.attempts} (${c.make_pct}%)`;
+}
+function muOrebRateCell(c) {
+  return c ? `${c.freq_pct}%` : "—";
 }
 
 function muOrebOutcomesHtml(orebData) {
   if (!orebData || (!orebData.off_2pt && !orebData.off_3pt)) return "";
   const rows = [
-    { label: "Off reb — 2PT miss", d: orebData.off_2pt },
-    { label: "Off reb — 3PT miss", d: orebData.off_3pt },
+    { label: "2PT miss", d: orebData.off_2pt },
+    { label: "3PT miss", d: orebData.off_3pt },
   ].filter(r => r.d);
   return `
-    <h3 style="margin-top:22px">Result of an offensive rebound</h3>
-    <table class="mu-shotclock-table">
-      <thead><tr><th>Off reb from</th><th class="num">2PT</th><th class="num">3PT</th><th class="num">Turnover</th><th class="num">Fouled</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>
-            <td>${r.label}</td>
-            <td class="num">${muOrebOutcomeCell(r.d.fg2)}</td>
-            <td class="num">${muOrebOutcomeCell(r.d.fg3)}</td>
-            <td class="num">${muOrebOutcomeCell(r.d.turnover)}</td>
-            <td class="num">${muOrebOutcomeCell(r.d.fouled)}</td>
-          </tr>`).join("")}
-      </tbody>
-    </table>`;
+    <div class="mu-shotclock-col">
+      <h3 style="margin-top:0">Result of an offensive rebound</h3>
+      <table class="mu-shotclock-table">
+        <thead><tr><th>Off reb from</th><th class="num">2PT</th><th class="num">3PT</th><th class="num">Turnover</th><th class="num">Fouled</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${r.label}</td>
+              <td class="num">${muOrebShotCell(r.d.fg2)}</td>
+              <td class="num">${muOrebShotCell(r.d.fg3)}</td>
+              <td class="num">${muOrebRateCell(r.d.turnover)}</td>
+              <td class="num">${muOrebRateCell(r.d.fouled)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 async function updateMatchup() {
@@ -1561,7 +1566,7 @@ async function updateMatchup() {
       <div class="mu-shotclock-wrap">
         ${muShotClockTableHtml(offClock, "Offense by shot clock")}
         ${muShotClockTableHtml(defClock, "Defense by shot clock")}
+        ${muOrebOutcomesHtml(orebData)}
       </div>
-      ${muOrebOutcomesHtml(orebData)}
     </div>`;
 }

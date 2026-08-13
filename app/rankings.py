@@ -821,8 +821,8 @@ def _oreb_outcome_breakdown(conn, team_id, source):
 
     return {
         "total": total,
-        "fg2": {"freq_pct": freq("2pt"), "make_pct": make_pct("2pt"), "count": counts["2pt"]},
-        "fg3": {"freq_pct": freq("3pt"), "make_pct": make_pct("3pt"), "count": counts["3pt"]},
+        "fg2": {"freq_pct": freq("2pt"), "make_pct": make_pct("2pt"), "makes": makes["2pt"], "attempts": counts["2pt"]},
+        "fg3": {"freq_pct": freq("3pt"), "make_pct": make_pct("3pt"), "makes": makes["3pt"], "attempts": counts["3pt"]},
         "turnover": {"freq_pct": freq("turnover"), "count": counts["turnover"]},
         "fouled": {"freq_pct": freq("foulon"), "count": counts["foulon"]},
     }
