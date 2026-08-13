@@ -245,6 +245,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .fm-read-card { margin-bottom: 20px; }
 .fm-read-card table { font-size: 12.5px; }
+.fm-segment-cell { font-weight: 700; }
 .tier-strong { color: #4169e1; font-weight: 700; }
 .tier-middle { color: var(--text-secondary); font-weight: 600; }
 .tier-weak { color: var(--critical); font-weight: 700; }

@@ -1298,11 +1298,11 @@ function fmTierCell(rank) {
 // attempts (volume), same convention as its bar chart, not shooting %.
 // "Avg Rank" is that segment's own average across all 6 tracked ranks --
 // one overall read for the whole row, tiered the same way as each stat.
-function renderFiveMinReadTable(rows) {
-  $("#fm-read-table").innerHTML = `
+function renderFiveMinReadTable(rows, tableSel = "#fm-read-table") {
+  $(tableSel).innerHTML = `
     <table>
       <thead><tr>
-        <th class="num">Avg Rank</th><th>Segment</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th>
+        <th>Segment</th><th class="num">Avg Rank</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th>
         <th class="num">FT Attempted</th><th class="num">Turnovers</th><th class="num">Fouls</th>
       </tr></thead>
       <tbody>
@@ -1311,8 +1311,8 @@ function renderFiveMinReadTable(rows) {
           const avgRank = ranks.reduce((sum, v) => sum + v, 0) / ranks.length;
           return `
           <tr>
+            <td class="fm-segment-cell">${r.label}m</td>
             ${fmTierCell(Math.round(avgRank * 10) / 10)}
-            <td>${r.label}m</td>
             ${fmTierCell(r.pts.rank)}
             ${fmTierCell(r.fg2.rank)}
             ${fmTierCell(r.fg3.rank)}
@@ -1333,7 +1333,8 @@ async function updateFiveMin() {
     fetch(`/api/teams/${id}/five-minute-splits?scope=${scope}`).then(r => r.json()),
     fetch(`/api/teams/${id}/five-minute-splits-against?scope=${scope}`).then(r => r.json()),
   ]);
-  renderFiveMinReadTable(rows);
+  renderFiveMinReadTable(rows, "#fm-read-table");
+  renderFiveMinReadTable(rowsDef, "#fm-read-table-def");
   renderFiveMinSet(rows, "", false);
   renderFiveMinSet(rowsDef, "-def", true);
 }

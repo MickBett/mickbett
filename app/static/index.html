@@ -232,6 +232,10 @@
     </div>
 
     <h3 class="section-divider">Defense — opponent stats <span class="hint" title="Same 8 five-minute segments, but for what this team's OPPONENTS did against them in games they played. Colouring flips direction where fewer is better for the defense (e.g. points/rebounds/steals allowed, fouls committed against opponents), and stays higher-is-better where forcing more is good (opponent fouls, opponent turnovers).">ⓘ</span></h3>
+    <div class="card fm-read-card">
+      <h3>Segment-by-segment read — opponent <span class="hint" title="Each cell's league rank for that segment, out of 10 teams, for what the OPPONENT did against this team: below 4 = Strong defense, 4-7 = Middle of the road, 8-10 = Weak. Points/shooting/rebounds allowed are ranked fewer/lower-is-better, so 'Strong' means holding the opponent down. Avg Rank (2nd column) is the segment's own average across all 6 tracked stats, tiered the same way -- e.g. 3.5 still counts as Strong.">ⓘ</span></h3>
+      <div id="fm-read-table-def"></div>
+    </div>
     <div class="fivemin-grid">
       <div class="card"><h3>Points Allowed<span class="fm-avgrank-badge" id="fm-pts-def-avgrank"></span></h3><canvas id="fm-pts-def"></canvas></div>
       <div class="card"><h3>Opponent 2PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg2-def-avgrank"></span></h3><canvas id="fm-fg2-def"></canvas></div>
