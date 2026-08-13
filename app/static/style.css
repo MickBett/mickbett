@@ -549,7 +549,7 @@ body.modal-open { overflow: hidden; }
 .mu-toprow-record { font-family: var(--font-display); font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1; }
 .mu-toprow-team { font-size: 13px; color: var(--text-secondary); }
 
-.mu-stat-row {
+.mu-tile-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -557,7 +557,6 @@ body.modal-open { overflow: hidden; }
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-.mu-stat-row-end { justify-content: flex-end; gap: 22px; }
 .mu-stat {
   flex: none;
   text-align: center;

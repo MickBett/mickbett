@@ -1518,12 +1518,10 @@ async function updateMatchup() {
         <span class="mu-toprow-record">${data.record}</span>
         <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
       </div>
-      <div class="mu-stat-row">
+      <div class="mu-tile-row">
         ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
-      </div>
-      ${muShotClockTableHtml(clockData)}
-      <div class="mu-stat-row mu-stat-row-end">
         ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
       </div>
+      ${muShotClockTableHtml(clockData)}
     </div>`;
 }
