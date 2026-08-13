@@ -1467,12 +1467,44 @@ function muStatTile(s, cls) {
     </div>`;
 }
 
+// Rank shown inline as "(#N of pool)" -- matches the phrasing used
+// everywhere else in the app's prose/tables rather than a separate column.
+function muClockPctCell(c) {
+  return c ? `${c.value}% (#${c.rank} of ${c.pool})` : "—";
+}
+function muClockPtsCell(row) {
+  if (!row.pts) return "—";
+  const pctPart = row.pct_of_total_pts != null ? ` · ${row.pct_of_total_pts}% of pts` : "";
+  return `${row.pts.value}${pctPart} (#${row.pts.rank} of ${row.pts.pool})`;
+}
+
+function muShotClockTableHtml(clockData) {
+  if (!clockData || !clockData.rows.length) return "";
+  return `
+    <h3 style="margin-top:22px">Offense by shot clock</h3>
+    <table>
+      <thead><tr><th>Shot clock</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th></tr></thead>
+      <tbody>
+        ${clockData.rows.map(r => `
+          <tr>
+            <td>${r.label}</td>
+            <td class="num">${muClockPtsCell(r)}</td>
+            <td class="num">${muClockPctCell(r.fg2_pct)}</td>
+            <td class="num">${muClockPctCell(r.fg3_pct)}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
 async function updateMatchup() {
   const teamId = $("#mu-team").value;
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const data = await (await fetch(`/api/teams/${teamId}/top-row`)).json();
+  const [data, clockData] = await Promise.all([
+    fetch(`/api/teams/${teamId}/top-row`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/shot-clock-offense`).then(r => r.json()),
+  ]);
 
   el.innerHTML = `
     <div class="card">
@@ -1487,5 +1519,6 @@ async function updateMatchup() {
       <div class="mu-stat-row mu-stat-row-end">
         ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
       </div>
+      ${muShotClockTableHtml(clockData)}
     </div>`;
 }

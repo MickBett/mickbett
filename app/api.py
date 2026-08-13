@@ -210,6 +210,16 @@ def team_top_row(team_id: int):
     return data
 
 
+@router.get("/teams/{team_id}/shot-clock-offense")
+def team_shot_clock_offense(team_id: int):
+    """Offense by shot-clock window (points + % of total scoring, 2PT%,
+    3PT%, each ranked) -- sits under the Matchup Scout top-row strip."""
+    data = rankings.team_shot_clock_offense(team_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
 @router.get("/matchup-scout")
 def matchup_scout(team_id: int, opponent_id: int):
     """How `opponent_id` might beat `team_id`, plus a verdict on whether

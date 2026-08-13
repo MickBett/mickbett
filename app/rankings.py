@@ -647,6 +647,74 @@ def team_top_row(team_id):
         conn.close()
 
 
+_SHOT_CLOCK_BUCKETS = [("0-8", "0-8s"), ("8-18", "8-18s"), ("18+", "18+s")]
+
+
+def _pts_by_bucket_ranked(conn, bucket):
+    """Points scored per game within one shot-clock bucket, season-wide,
+    ranked -- pts isn't one of CLOCK_METRICS' single-action stats, so this
+    sums 2pt/3pt/freethrow makes into actual points the same way the
+    5-minute-splits endpoint does for its segment scoring."""
+    events = conn.execute(
+        "SELECT team_id AS eid, action_type, made, shot_clock_used FROM pbp_events WHERE team_id IS NOT NULL"
+    ).fetchall()
+    gp_rows = conn.execute("SELECT team_id AS id, COUNT(*) AS gp FROM team_game_stats GROUP BY team_id").fetchall()
+    gp_map = {r["id"]: r["gp"] for r in gp_rows}
+
+    pts_value = {"2pt": 2, "3pt": 3, "freethrow": 1}
+    totals = {}
+    for e in events:
+        if e["action_type"] not in pts_value or not e["made"]:
+            continue
+        if not _in_bucket(e["shot_clock_used"], bucket):
+            continue
+        totals[e["eid"]] = totals.get(e["eid"], 0) + pts_value[e["action_type"]]
+
+    out = [{"id": tid, "value": round(totals.get(tid, 0) / gp, 1)} for tid, gp in gp_map.items() if gp]
+    return _rank(out, "value", "desc")
+
+
+def team_shot_clock_offense(team_id):
+    """Offense broken down by shot-clock window (0-8s/8-18s/18+s): points
+    per game (plus what share of the team's total scoring that window
+    represents), 2PT%, and 3PT% -- each with league rank. Sits just under
+    the top-row stat strip on the Matchup Scout tab."""
+    conn = db.get_conn()
+    try:
+        season_trad = _trad_team_rows(conn)
+        team_row = next((r for r in season_trad if r["id"] == team_id), None)
+        if not team_row:
+            return None
+        total_ppg = team_row["ppg"]
+
+        def cell(ranked, r):
+            return {"value": r["value"], "rank": r["rank"], "pool": len(ranked)} if r else None
+
+        rows = []
+        for bucket, label in _SHOT_CLOCK_BUCKETS:
+            pts_ranked = _pts_by_bucket_ranked(conn, bucket)
+            pts_r = next((x for x in pts_ranked if x["id"] == team_id), None)
+            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket), "value", "desc")
+            fg2_r = next((x for x in fg2_ranked if x["id"] == team_id), None)
+            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket), "value", "desc")
+            fg3_r = next((x for x in fg3_ranked if x["id"] == team_id), None)
+
+            rows.append({
+                "bucket": bucket, "label": label,
+                "pts": cell(pts_ranked, pts_r),
+                "pct_of_total_pts": round(pts_r["value"] / total_ppg * 100, 1) if pts_r and total_ppg else None,
+                "fg2_pct": cell(fg2_ranked, fg2_r),
+                "fg3_pct": cell(fg3_ranked, fg3_r),
+            })
+
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["team_logo_url"]},
+            "rows": rows,
+        }
+    finally:
+        conn.close()
+
+
 # ------------------------------------------------------ matchup scout (v1) -
 # Superseded by team_season_table() above -- the Matchup Scout tab was
 # rebuilt into a plain season-stats column table. Left in place (currently
