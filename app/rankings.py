@@ -569,7 +569,51 @@ def team_weaknesses(team_id, top_n=4):
     return picks
 
 
-# ---------------------------------------------------------- matchup scout -
+# ------------------------------------------------------------ matchup scout
+def team_season_table(team_id):
+    """Plain column table of one team's season stats -- record plus every
+    TRAD_TEAM_METRICS value, each with its league rank. No narrative, no
+    opponent comparison -- just the numbers, one row per stat."""
+    conn = db.get_conn()
+    try:
+        season_trad = _trad_team_rows(conn)
+        team_row = next((r for r in season_trad if r["id"] == team_id), None)
+        if not team_row:
+            return None
+
+        def fmt(key, val):
+            if key == "win_pct":
+                return f"{round(val * 100, 1)}%"
+            if key.endswith("_pct"):
+                return f"{val}%"
+            if key == "diff":
+                return f"{'+' if val > 0 else ''}{val}"
+            return val
+
+        rows = [{"label": "Record", "value": f"{team_row['wins']}-{team_row['losses']}", "rank": None, "pool": None}]
+        for key, label, direction in TRAD_TEAM_METRICS:
+            ranked = _rank(season_trad, key, direction)
+            r = next((x for x in ranked if x["id"] == team_id), None)
+            if not r:
+                continue
+            rows.append({"label": label, "value": fmt(key, r[key]), "rank": r["rank"], "pool": len(ranked)})
+
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["team_logo_url"]},
+            "gp": team_row["gp"],
+            "rows": rows,
+        }
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------ matchup scout (v1) -
+# Superseded by team_season_table() above -- the Matchup Scout tab was
+# rebuilt into a plain season-stats column table. Left in place (currently
+# unused by the frontend) rather than deleted, in case any of this --
+# the attack/caution/pressure "keys", the plain-language summaries, the
+# rebounding-by-shot-type profile -- gets reintroduced later.
+#
 # Curated subset of TRAD_TEAM_METRICS for the plain-language basic-stats
 # summary -- basics only, the finer shot-clock/5-minute cross-comparisons
 # have their own dedicated sections elsewhere on the tab.

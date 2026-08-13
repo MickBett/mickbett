@@ -1437,347 +1437,39 @@ function luStatsBlock(s) {
     </div>`;
 }
 
+
 // -------------------------------------------------------- matchup scout --
 $("#mu-team").addEventListener("change", updateMatchup);
-$("#mu-opponent").addEventListener("change", updateMatchup);
-let muCharts = [];
 
 async function loadMatchupOptions() {
   if (!teams.length) teams = await (await fetch("/api/teams")).json();
-  const teamSel = $("#mu-team"), oppSel = $("#mu-opponent");
+  const teamSel = $("#mu-team");
   if (!teamSel.options.length) {
-    const opts = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
-    teamSel.innerHTML = opts;
-    oppSel.innerHTML = opts;
-    if (teams.length > 1) oppSel.value = teams[1].id;
+    teamSel.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
   }
   updateMatchup();
 }
 
-function muDestroyAll() {
-  muCharts.forEach(c => c && c.destroy());
-  muCharts = [];
-}
+async function updateMatchup() {
+  const teamId = $("#mu-team").value;
+  if (!teamId) return;
+  const el = $("#mu-content");
+  el.innerHTML = "<p class='muted'>Loading…</p>";
+  const data = await (await fetch(`/api/teams/${teamId}/season-table`)).json();
 
-// The two lead-in summaries: plain-language season/last-3-games basics,
-// then a 5-minute-period read -- both server-written prose (varied
-// phrasing baked in on that side), rendered here as plain paragraphs.
-function muBasicSummaryHtml(data) {
-  if (!data.basic_summary || !data.basic_summary.paragraphs.length) return "";
-  return `
+  el.innerHTML = `
     <div class="card">
-      <h3>${data.team.name} — season &amp; recent form</h3>
-      ${data.basic_summary.paragraphs.map(p => `<p class="mu-summary-text">${p}</p>`).join("")}
-    </div>`;
-}
-
-function muFiveMinSummaryHtml(data) {
-  if (!data.five_min_summary || !data.five_min_summary.paragraphs.length) return "";
-  return `
-    <div class="card" style="margin-top:16px">
-      <h3>5-minute period evaluation</h3>
-      ${data.five_min_summary.paragraphs.map(p => `<p class="mu-summary-text">${p}</p>`).join("")}
-    </div>`;
-}
-
-const MU_KEY_LABEL = { attack: "Attack", caution: "Caution", pressure: "Pressure" };
-
-function muKeysHtml(data) {
-  if (!data.keys.length) return `<p class="muted">Not enough data yet to build a scouting angle here.</p>`;
-  return `
-    <div class="card">
-      <h3>How ${data.opponent.name} beats ${data.team.name}</h3>
-      ${data.keys.map((k, i) => `
-        <div class="mu-key mu-key-${k.kind}">
-          <span class="mu-key-num">${i + 1}</span>
-          <div>
-            <div class="mu-key-tag">${MU_KEY_LABEL[k.kind] || k.kind} · ${k.category}</div>
-            <p class="mu-key-text">${k.text}</p>
-          </div>
-        </div>`).join("")}
-    </div>`;
-}
-
-// Most-used 5-man units over just the last 3 games (not the full season --
-// rosters turn over during a season, so a season-long combo list can
-// surface players who've since moved on).
-function muLineupsSectionHtml(lineups, teamName) {
-  if (!lineups || !lineups.units.length) {
-    return `
-      <div class="card" style="margin-top:16px">
-        <h3>Lineups (last 3 games)</h3>
-        <p class="muted">Not enough on-court data over ${possessive(teamName)} last 3 games to reconstruct lineups yet.</p>
-      </div>`;
-  }
-  const top = lineups.units[0];
-  return `
-    <div class="card" style="margin-top:16px">
-      <h3>Lineups (last 3 games) <span class="hint" title="Restricted to the last 3 games rather than the full season -- rosters turn over enough during a season that a season-long lineup list can include players who are no longer on the team.">ⓘ</span></h3>
-      <p class="muted">${possessive(teamName)} most-used 5-man units over their last 3 games. The top unit accounts for ${top.pct_of_offense}% of their scoring in that window.</p>
-      <canvas id="mu-lineup-chart" class="mu-lineup-canvas"></canvas>
-      <table class="mu-clock-table" style="margin-top:12px">
-        <thead><tr><th>Unit</th><th class="num">Games</th><th class="num">Pts</th><th class="num">% of offense</th></tr></thead>
+      <h3>${teamLogo(data.team.logo_url, data.team.name)} ${data.team.name} — season stats <span class="muted" style="font-weight:400">(${data.gp} games)</span></h3>
+      <table>
+        <thead><tr><th>Stat</th><th class="num">Value</th><th class="num">League Rank</th></tr></thead>
         <tbody>
-          ${lineups.units.map(u => `
+          ${data.rows.map(r => `
             <tr>
-              <td>${u.players.map(p => p.name).join(", ")}</td>
-              <td class="num">${u.games} of ${u.games_scoped}</td>
-              <td class="num">${u.pts}</td>
-              <td class="num">${u.pct_of_offense}%</td>
+              <td>${r.label}</td>
+              <td class="num">${r.value}</td>
+              <td class="num">${r.rank != null ? `#${r.rank} of ${r.pool}` : "—"}</td>
             </tr>`).join("")}
         </tbody>
       </table>
     </div>`;
-}
-
-function renderMuLineupChart(canvasId, lineups) {
-  const labels = lineups.units.map(u => u.players.map(p => p.name).join(" / "));
-  const values = lineups.units.map(u => u.pts);
-  return new Chart($(canvasId), {
-    type: "bar",
-    data: { labels, datasets: [{ data: values, backgroundColor: COLOR.s1, borderRadius: 4 }] },
-    options: {
-      indexAxis: "y",
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => `${ctx.raw} pts (${lineups.units[ctx.dataIndex].pct_of_offense}% of team scoring)` } },
-      },
-      scales: {
-        x: { beginAtZero: true, grid: { color: COLOR.border } },
-        y: { grid: { display: false }, ticks: { font: { size: 9.5 } } },
-      },
-    },
-  });
-}
-
-// Compact possession-control table -- last night vs season vs last-5, the
-// same 3-way comparison used everywhere else in the app so a one-game blip
-// can be told apart from a real trend.
-function muPossessionTable(game, season, last5) {
-  const rows = [
-    { label: "Possessions (est.)", key: "possessions" },
-    { label: "Points per 100 poss.", key: "pts_per_100" },
-    { label: "Turnovers", key: "tov" },
-    { label: "Fouls", key: "fouls" },
-    { label: "Off. rebounds", key: "oreb" },
-    { label: "OR off 3PT misses", key: "oreb_3pt" },
-  ];
-  return `
-    <table class="mu-clock-table">
-      <thead><tr><th></th><th class="num">Last night</th><th class="num">Season avg</th><th class="num">Last 5</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>
-            <td>${r.label}</td>
-            <td class="num">${game[r.key] ?? "—"}</td>
-            <td class="num">${season[r.key] ?? "—"}</td>
-            <td class="num">${last5[r.key] ?? "—"}</td>
-          </tr>`).join("")}
-      </tbody>
-    </table>`;
-}
-
-const MU_BUCKET_LABEL = { "0-8": "0-8s", "8-18": "8-18s", "18+": "18+s" };
-
-// Offence-vs-scout table: one row per shot-clock window x shot type, "last
-// night" as makes/attempts/%, season and last-5 as plain % (an averaged
-// make/attempt count doesn't mean much on its own).
-function muOffenceClockTable(game, season, last5) {
-  const pctText = (cell) => cell.pct === null ? "—" : `${cell.pct}%`;
-  const rows = [];
-  game.buckets.forEach((b, i) => {
-    const sb = season.buckets[i], lb = last5.buckets[i];
-    ["fg3", "fg2"].forEach(stat => {
-      rows.push({
-        label: `${MU_BUCKET_LABEL[b.label]} ${stat === "fg3" ? "3PT" : "2PT"}`,
-        game: fmtMA(b[stat]), season: pctText(sb[stat]), last5: pctText(lb[stat]),
-      });
-    });
-  });
-  rows.push({ label: "Free throws", game: fmtMA(game.ft), season: pctText(season.ft), last5: pctText(last5.ft) });
-  return `
-    <table class="mu-clock-table">
-      <thead><tr><th>Window</th><th class="num">Last night</th><th class="num">Season avg</th><th class="num">Last 5</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `<tr><td>${r.label}</td><td class="num">${r.game}</td><td class="num">${r.season}</td><td class="num">${r.last5}</td></tr>`).join("")}
-      </tbody>
-    </table>`;
-}
-
-// Defence-vs-scout table: same idea, mirrored onto what the opponent shot
-// against them (no last-5 column here -- not computed on the backend for
-// the "against" side, to keep the response size reasonable).
-function muDefenceClockTable(game, season) {
-  const pctText = (cell) => cell.pct === null ? "—" : `${cell.pct}%`;
-  const rows = [];
-  game.buckets.forEach((b, i) => {
-    const sb = season.buckets[i];
-    ["fg3", "fg2"].forEach(stat => {
-      rows.push({
-        label: `${MU_BUCKET_LABEL[b.label]} ${stat === "fg3" ? "3PT" : "2PT"} allowed`,
-        game: fmtMA(b[stat]), season: pctText(sb[stat]),
-      });
-    });
-  });
-  return `
-    <table class="mu-clock-table">
-      <thead><tr><th>Window</th><th class="num">Last night</th><th class="num">Season allowed</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `<tr><td>${r.label}</td><td class="num">${r.game}</td><td class="num">${r.season}</td></tr>`).join("")}
-      </tbody>
-    </table>`;
-}
-
-// Diverging horizontal bar -- % better (green) or worse (red) than season
-// average for each headline stat, same idea as the PDF's "where the game
-// diverged" chart. Sign is already normalized server-side so positive
-// always means "helped them."
-function renderVerdictChart(canvasId, verdict) {
-  const labels = verdict.map(v => v.label);
-  const values = verdict.map(v => v.pct_diff);
-
-  const labelPlugin = {
-    id: "muVerdictLabels",
-    afterDatasetsDraw(chart) {
-      const meta = chart.getDatasetMeta(0);
-      const ctx = chart.ctx;
-      ctx.save();
-      ctx.font = "700 11px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.textBaseline = "middle";
-      meta.data.forEach((bar, i) => {
-        const v = values[i];
-        if (v == null) return;
-        ctx.fillStyle = v >= 0 ? COLOR.good : COLOR.critical;
-        ctx.textAlign = v >= 0 ? "left" : "right";
-        ctx.fillText(`${v > 0 ? "+" : ""}${v}%`, bar.x + (v >= 0 ? 6 : -6), bar.y);
-      });
-      ctx.restore();
-    },
-  };
-
-  return new Chart($(canvasId), {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{ data: values, backgroundColor: values.map(v => (v ?? 0) >= 0 ? COLOR.good : COLOR.critical), borderRadius: 4 }],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true, maintainAspectRatio: false,
-      layout: { padding: { left: 40, right: 40 } },
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => `${ctx.raw > 0 ? "+" : ""}${ctx.raw}% vs season average` } },
-      },
-      scales: {
-        x: { grid: { color: COLOR.border }, ticks: { callback: (v) => `${v}%` } },
-        y: { grid: { display: false } },
-      },
-    },
-    plugins: [labelPlugin],
-  });
-}
-
-// Scoring by 5-minute segment -- bars for the actual game, a dashed line
-// for the season average, matching the same overlay idea used for the
-// average-rank line on the 5 Minute Splits tab.
-function renderMuFiveMinChart(canvasId, fiveMin) {
-  return new Chart($(canvasId), {
-    data: {
-      labels: fiveMin.labels,
-      datasets: [
-        { type: "bar", label: "This game", data: fiveMin.game_values, backgroundColor: COLOR.s2, borderRadius: 4, order: 1 },
-        { type: "line", label: "Season average", data: fiveMin.season_values, borderColor: COLOR.critical, backgroundColor: COLOR.critical, borderDash: [5, 3], pointRadius: 3, tension: 0.2, order: 0 },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, position: "top", labels: { boxWidth: 12 } } },
-      scales: {
-        x: { grid: { display: false } },
-        y: { beginAtZero: true, grid: { color: COLOR.border } },
-      },
-    },
-  });
-}
-
-async function updateMatchup() {
-  const teamId = $("#mu-team").value;
-  const oppId = $("#mu-opponent").value;
-  if (!teamId || !oppId) return;
-  const el = $("#mu-content");
-  muDestroyAll();
-
-  if (teamId === oppId) {
-    el.innerHTML = `<p class="muted">Pick two different teams to compare.</p>`;
-    return;
-  }
-
-  el.innerHTML = "<p class='muted'>Loading…</p>";
-  const data = await (await fetch(`/api/matchup-scout?team_id=${teamId}&opponent_id=${oppId}`)).json();
-
-  const basicSummaryHtml = muBasicSummaryHtml(data);
-  const fiveMinSummaryHtml = muFiveMinSummaryHtml(data);
-  const keysHtml = muKeysHtml(data);
-  const lineupsHtml = muLineupsSectionHtml(data.lineups, data.team.name);
-  const h = data.recent_game;
-
-  if (!h) {
-    el.innerHTML = `${basicSummaryHtml}${fiveMinSummaryHtml}${keysHtml}
-      <div class="card" style="margin-top:16px">
-        <p class="muted">${data.team.name} haven't played a game yet this season -- showing the scouting projection only.</p>
-      </div>
-      ${lineupsHtml}`;
-    if (data.lineups) muCharts.push(renderMuLineupChart("#mu-lineup-chart", data.lineups));
-    return;
-  }
-
-  // Their single most recent game -- whoever it happened to be against,
-  // not necessarily the opponent selected above. Flagged explicitly when
-  // it differs, so it never reads as "the last time these two played."
-  const recentNote = h.is_scouted_opponent
-    ? `How ${possessive(data.team.name)} most recent game, against ${data.opponent.name}, compared to their season (and last-5-games) profile.`
-    : `${possessive(data.team.name)} single most recent game -- against ${h.opponent.name}, not ${data.opponent.name} -- compared to their season (and last-5-games) profile. This is their most current form, not their last meeting with ${data.opponent.name}.`;
-
-  el.innerHTML = `
-    ${basicSummaryHtml}
-    ${fiveMinSummaryHtml}
-    ${keysHtml}
-    <div class="card" style="margin-top:16px">
-      <div class="mu-h2h-header">
-        <span class="mu-h2h-score">${data.team.name} ${h.team_score} – ${h.opponent_score} ${h.opponent.name}</span>
-        <span class="mu-h2h-badge ${h.team_won ? "win" : "loss"}">${h.team_won ? "Win" : "Loss"}</span>
-        <span class="mu-h2h-date">${h.game_date}</span>
-      </div>
-      <p class="muted">${recentNote}</p>
-
-      <h3 style="margin-top:14px">Where the game diverged from the scout</h3>
-      <canvas id="mu-verdict-chart"></canvas>
-
-      <div class="mu-section">
-        <h3>Possession control</h3>
-        ${muPossessionTable(h.game_profile, h.season_profile, h.last5_profile)}
-      </div>
-
-      <div class="mu-section">
-        <h3>Offence vs the scout</h3>
-        ${muOffenceClockTable(h.game_profile, h.season_profile, h.last5_profile)}
-      </div>
-
-      <div class="mu-section">
-        <h3>Defence vs the scout</h3>
-        ${muDefenceClockTable(h.game_profile_def, h.season_profile_def)}
-      </div>
-
-      <div class="mu-section">
-        <h3>Scoring by 5-minute segment</h3>
-        <canvas id="mu-fivemin-chart"></canvas>
-      </div>
-    </div>
-    ${lineupsHtml}`;
-
-  muCharts.push(renderVerdictChart("#mu-verdict-chart", h.verdict));
-  muCharts.push(renderMuFiveMinChart("#mu-fivemin-chart", h.five_min));
-  if (data.lineups) muCharts.push(renderMuLineupChart("#mu-lineup-chart", data.lineups));
 }

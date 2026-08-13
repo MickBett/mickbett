@@ -200,6 +200,17 @@ def _matchup_lineup_summary(conn, team_id, game_ids, top_n=5):
     return {"games_scoped": len(game_ids), "total_pts": total_pts, "units": units}
 
 
+@router.get("/teams/{team_id}/season-table")
+def team_season_table(team_id: int):
+    """Backs the Matchup Scout tab: a plain column table of one team's
+    season stats (record + every traditional per-game metric, each with
+    its league rank) -- no opponent, no narrative, just the numbers."""
+    data = rankings.team_season_table(team_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
 @router.get("/matchup-scout")
 def matchup_scout(team_id: int, opponent_id: int):
     """How `opponent_id` might beat `team_id`, plus a verdict on whether
