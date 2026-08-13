@@ -15,6 +15,11 @@ function playerAvatar(url, alt = "", extraClass = "") {
 function nameCell(logoOrAvatarHtml, name) {
   return `<div class="name-cell">${logoOrAvatarHtml}<span>${name}</span></div>`;
 }
+// Grammatically correct possessive for a team/player name -- "Sea Bears'"
+// not "Sea Bears's" for names already ending in s.
+function possessive(name) {
+  return name.endsWith("s") ? `${name}'` : `${name}'s`;
+}
 
 const css = getComputedStyle(document.documentElement);
 const COLOR = {
@@ -1454,6 +1459,27 @@ function muDestroyAll() {
   muCharts = [];
 }
 
+// The two lead-in summaries: plain-language season/last-3-games basics,
+// then a 5-minute-period read -- both server-written prose (varied
+// phrasing baked in on that side), rendered here as plain paragraphs.
+function muBasicSummaryHtml(data) {
+  if (!data.basic_summary || !data.basic_summary.paragraphs.length) return "";
+  return `
+    <div class="card">
+      <h3>${data.team.name} — season &amp; recent form</h3>
+      ${data.basic_summary.paragraphs.map(p => `<p class="mu-summary-text">${p}</p>`).join("")}
+    </div>`;
+}
+
+function muFiveMinSummaryHtml(data) {
+  if (!data.five_min_summary || !data.five_min_summary.paragraphs.length) return "";
+  return `
+    <div class="card" style="margin-top:16px">
+      <h3>5-minute period evaluation</h3>
+      ${data.five_min_summary.paragraphs.map(p => `<p class="mu-summary-text">${p}</p>`).join("")}
+    </div>`;
+}
+
 const MU_KEY_LABEL = { attack: "Attack", caution: "Caution", pressure: "Pressure" };
 
 function muKeysHtml(data) {
@@ -1480,14 +1506,14 @@ function muLineupsSectionHtml(lineups, teamName) {
     return `
       <div class="card" style="margin-top:16px">
         <h3>Lineups (last 3 games)</h3>
-        <p class="muted">Not enough on-court data over ${teamName}'s last 3 games to reconstruct lineups yet.</p>
+        <p class="muted">Not enough on-court data over ${possessive(teamName)} last 3 games to reconstruct lineups yet.</p>
       </div>`;
   }
   const top = lineups.units[0];
   return `
     <div class="card" style="margin-top:16px">
       <h3>Lineups (last 3 games) <span class="hint" title="Restricted to the last 3 games rather than the full season -- rosters turn over enough during a season that a season-long lineup list can include players who are no longer on the team.">ⓘ</span></h3>
-      <p class="muted">${teamName}'s most-used 5-man units over their last 3 games. The top unit accounts for ${top.pct_of_offense}% of their scoring in that window.</p>
+      <p class="muted">${possessive(teamName)} most-used 5-man units over their last 3 games. The top unit accounts for ${top.pct_of_offense}% of their scoring in that window.</p>
       <canvas id="mu-lineup-chart" class="mu-lineup-canvas"></canvas>
       <table class="mu-clock-table" style="margin-top:12px">
         <thead><tr><th>Unit</th><th class="num">Games</th><th class="num">Pts</th><th class="num">% of offense</th></tr></thead>
@@ -1691,12 +1717,14 @@ async function updateMatchup() {
   el.innerHTML = "<p class='muted'>Loading…</p>";
   const data = await (await fetch(`/api/matchup-scout?team_id=${teamId}&opponent_id=${oppId}`)).json();
 
+  const basicSummaryHtml = muBasicSummaryHtml(data);
+  const fiveMinSummaryHtml = muFiveMinSummaryHtml(data);
   const keysHtml = muKeysHtml(data);
   const lineupsHtml = muLineupsSectionHtml(data.lineups, data.team.name);
   const h = data.recent_game;
 
   if (!h) {
-    el.innerHTML = `${keysHtml}
+    el.innerHTML = `${basicSummaryHtml}${fiveMinSummaryHtml}${keysHtml}
       <div class="card" style="margin-top:16px">
         <p class="muted">${data.team.name} haven't played a game yet this season -- showing the scouting projection only.</p>
       </div>
@@ -1709,10 +1737,12 @@ async function updateMatchup() {
   // not necessarily the opponent selected above. Flagged explicitly when
   // it differs, so it never reads as "the last time these two played."
   const recentNote = h.is_scouted_opponent
-    ? `How ${data.team.name}'s most recent game, against ${data.opponent.name}, compared to their season (and last-5-games) profile.`
-    : `${data.team.name}'s single most recent game -- against ${h.opponent.name}, not ${data.opponent.name} -- compared to their season (and last-5-games) profile. This is their most current form, not their last meeting with ${data.opponent.name}.`;
+    ? `How ${possessive(data.team.name)} most recent game, against ${data.opponent.name}, compared to their season (and last-5-games) profile.`
+    : `${possessive(data.team.name)} single most recent game -- against ${h.opponent.name}, not ${data.opponent.name} -- compared to their season (and last-5-games) profile. This is their most current form, not their last meeting with ${data.opponent.name}.`;
 
   el.innerHTML = `
+    ${basicSummaryHtml}
+    ${fiveMinSummaryHtml}
     ${keysHtml}
     <div class="card" style="margin-top:16px">
       <div class="mu-h2h-header">

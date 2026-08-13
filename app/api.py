@@ -242,6 +242,88 @@ def matchup_scout(team_id: int, opponent_id: int):
         }
     scout["five_min_matchup"] = five_min_matchup
 
+    # Plain-language "5 minute period evaluation" -- each segment's own
+    # average rank across all 6 tracked stats (same formula as the 5-Minute
+    # tab's read table), then calls out team_id's single best and worst
+    # segment plus an overall Strong/Middle/Weak read, comparing the worst
+    # (and best) stretch to what opponent_id -- the team using this scout --
+    # themselves put up in that exact window.
+    five_min_summary = None
+    if team_5min and opp_5min:
+        def seg_avg_rank(seg):
+            ranks = [seg[k]["rank"] for k in ("pts", "fg2", "fg3", "ft", "tov", "fouls")]
+            return sum(ranks) / len(ranks)
+
+        team_seg_avgs = [(r, seg_avg_rank(r)) for r in team_5min]
+        best_seg, best_avg = min(team_seg_avgs, key=lambda x: x[1])
+        worst_seg, worst_avg = max(team_seg_avgs, key=lambda x: x[1])
+        overall_avg = sum(a for _, a in team_seg_avgs) / len(team_seg_avgs)
+        pool = team_5min[0]["pts"]["pool"]
+        opp_at_best = next((r for r in opp_5min if r["segment"] == best_seg["segment"]), None)
+        opp_at_worst = next((r for r in opp_5min if r["segment"] == worst_seg["segment"]), None)
+
+        seed = team_id * 31 + opponent_id * 17
+        team_name, opp_name = scout["team"]["name"], scout["opponent"]["name"]
+        tier = rankings.tier_label(overall_avg)
+        tier_variants = {
+            "Strong": [
+                f"{team_name} are strong across the full 40 minutes -- a #{round(overall_avg, 1)} average rank "
+                f"across all 8 segments, with no real soft stretch to target.",
+                f"There's no obvious dead zone for {team_name}: a strong #{round(overall_avg, 1)} average rank "
+                f"across every 5-minute segment of the game.",
+            ],
+            "Middle": [
+                f"{team_name} are fairly even from start to finish -- a #{round(overall_avg, 1)} average rank "
+                f"across all 8 segments, without one stretch that clearly defines the game.",
+                f"No real extremes for {team_name} across the 40 minutes: a middling #{round(overall_avg, 1)} "
+                f"average rank segment to segment.",
+            ],
+            "Weak": [
+                f"{team_name} struggle to find rhythm across the 40 minutes -- just a #{round(overall_avg, 1)} "
+                f"average rank across all 8 segments.",
+                f"Consistency is a real issue for {team_name}: a weak #{round(overall_avg, 1)} average rank "
+                f"across every 5-minute segment of the game.",
+            ],
+        }[tier]
+        paragraphs = [rankings._pick(tier_variants, seed)]
+
+        if opp_at_best:
+            paragraphs.append(rankings._pick([
+                f"Their best stretch is the {best_seg['label']}-minute mark (#{round(best_avg, 1)} average rank) "
+                f"-- for reference, {opp_name} put up {opp_at_best['pts']['value']} points of their own there "
+                f"(#{opp_at_best['pts']['rank']} of {pool}).",
+                f"{team_name} are toughest to deal with in the {best_seg['label']}-minute window "
+                f"(#{round(best_avg, 1)} average rank); {opp_name} score {opp_at_best['pts']['value']} points a "
+                f"game in that same stretch (#{opp_at_best['pts']['rank']} of {pool}).",
+            ], seed + 7))
+        else:
+            paragraphs.append(
+                f"Their best stretch is the {best_seg['label']}-minute mark, averaging a #{round(best_avg, 1)} "
+                f"rank across points, shooting, turnovers, and fouls."
+            )
+
+        if opp_at_worst:
+            paragraphs.append(rankings._pick([
+                f"Their softest window is the {worst_seg['label']}-minute mark (#{round(worst_avg, 1)} average "
+                f"rank) -- {opp_name} average {opp_at_worst['pts']['value']} points of their own in that exact "
+                f"stretch (#{opp_at_worst['pts']['rank']} of {pool}), worth leaning into.",
+                f"The {worst_seg['label']}-minute mark is where {team_name} are most exploitable "
+                f"(#{round(worst_avg, 1)} average rank) -- {opp_name} themselves score {opp_at_worst['pts']['value']} "
+                f"points a game in that window (#{opp_at_worst['pts']['rank']} of {pool}), a stretch worth targeting.",
+            ], seed + 13))
+        else:
+            paragraphs.append(
+                f"Their softest window is the {worst_seg['label']}-minute mark, averaging just a "
+                f"#{round(worst_avg, 1)} rank across points, shooting, turnovers, and fouls."
+            )
+
+        five_min_summary = {
+            "paragraphs": paragraphs,
+            "overall_avg_rank": round(overall_avg, 1), "overall_tier": tier, "pool": pool,
+            "best_segment_label": best_seg["label"], "worst_segment_label": worst_seg["label"],
+        }
+    scout["five_min_summary"] = five_min_summary
+
     recent = conn.execute(
         """SELECT g.id, g.game_date, g.team1_id, g.team2_id, g.team1_score, g.team2_score,
                   t1.name AS team1_name, t1.logo_url AS team1_logo_url,

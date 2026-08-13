@@ -37,6 +37,31 @@ CLOCK_METRICS = [
 MIN_ATTEMPTS_FOR_PCT = 5
 
 
+def tier_label(avg_rank):
+    """Strong/Middle/Weak read for a (possibly fractional, e.g. an average
+    across several stats) league rank out of 10 -- shared threshold with
+    the 5-Minute tab's read table: below 4 = Strong, 4-7 = Middle, else
+    Weak."""
+    if avg_rank < 4:
+        return "Strong"
+    if avg_rank <= 7:
+        return "Middle"
+    return "Weak"
+
+
+def _pick(options, seed):
+    """Deterministic-but-varied phrasing: same matchup always reads the
+    same way (reproducible, cacheable), but different matchups/segments
+    land on different phrasing rather than one fixed template every time."""
+    return options[seed % len(options)]
+
+
+def possessive(name):
+    """Grammatically correct possessive for a team/player name -- "Sea
+    Bears'" not "Sea Bears's" for names already ending in s."""
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
+
+
 def metrics_menu():
     """Grouped list of every rankable category, for building the UI selector."""
     groups = [{"group": "Season Averages", "items": [
@@ -545,6 +570,128 @@ def team_weaknesses(team_id, top_n=4):
 
 
 # ---------------------------------------------------------- matchup scout -
+# Curated subset of TRAD_TEAM_METRICS for the plain-language basic-stats
+# summary -- basics only, the finer shot-clock/5-minute cross-comparisons
+# have their own dedicated sections elsewhere on the tab.
+_BASIC_SUMMARY_KEYS = ("ppg", "papg", "diff", "rpg", "apg", "topg", "fg_pct", "tp_pct")
+_BASIC_METRIC_INFO = {k: (label, direction) for k, label, direction in TRAD_TEAM_METRICS if k in _BASIC_SUMMARY_KEYS}
+
+
+def _basic_stats_summary(conn, team_id, opponent_id, season_trad, team_row, opp_row):
+    """Plain-language read on team_id's season basics (record, scoring,
+    rebounding, ballhandling, shooting) plus their last-3-games form, each
+    stat compared directly against opponent_id's own number in the same
+    category -- not the offense-vs-defense cross-matching the "keys"
+    section already does, just "who's better at this, and by how much."""
+    last3_ids = _team_last_n_game_ids(conn, team_id, 3)
+    last3_rows = _trad_team_rows(conn, {team_id: last3_ids}) if last3_ids else []
+    last3_row = next((r for r in last3_rows if r["id"] == team_id), None)
+
+    ranks = {}
+    for key, (label, direction) in _BASIC_METRIC_INFO.items():
+        ranked = _rank(season_trad, key, direction)
+        tr = next((r for r in ranked if r["id"] == team_id), None)
+        orow = next((r for r in ranked if r["id"] == opponent_id), None)
+        if not tr or not orow:
+            continue
+        ranks[key] = {
+            "label": label, "pool": len(ranked),
+            "team_rank": tr["rank"], "team_value": tr[key],
+            "opp_rank": orow["rank"], "opp_value": orow[key],
+        }
+
+    seed = team_id * 31 + opponent_id * 17
+    paragraphs = []
+
+    diff = team_row["diff"]
+    diff_word = "positive margin" if diff > 0 else ("deficit" if diff < 0 else "even margin")
+    paragraphs.append(_pick([
+        f"{team_row['name']} sit at {team_row['wins']}-{team_row['losses']} this season, averaging "
+        f"{team_row['ppg']} points a night while allowing {team_row['papg']} -- a {diff_word} of {abs(diff)}.",
+        f"Season-long, {team_row['name']} are {team_row['wins']}-{team_row['losses']}, scoring "
+        f"{team_row['ppg']} per game and giving up {team_row['papg']}, for a {diff_word} of {abs(diff)}.",
+        f"{possessive(team_row['name'])} record stands at {team_row['wins']}-{team_row['losses']}: {team_row['ppg']} "
+        f"points for, {team_row['papg']} against, a {diff_word} of {abs(diff)} a night.",
+    ], seed))
+
+    if last3_row:
+        deltas = []
+        for key, thresh, unit in (("ppg", 2.5, "Scoring"), ("fg_pct", 3, "2PT/overall FG%"),
+                                   ("tp_pct", 3, "3P%"), ("topg", 1.2, "Turnovers")):
+            season_v, last3_v = team_row.get(key), last3_row.get(key)
+            if season_v is None or last3_v is None:
+                continue
+            d = round(last3_v - season_v, 1)
+            if abs(d) >= thresh:
+                deltas.append((key, d, season_v, last3_v, unit))
+        if deltas:
+            deltas.sort(key=lambda d: -abs(d[1]))
+            parts = []
+            for key, d, season_v, last3_v, unit in deltas[:2]:
+                word = "up" if d > 0 else "down"
+                if key in ("fg_pct", "tp_pct"):
+                    parts.append(f"{unit} is {word} to {last3_v}% (season: {season_v}%)")
+                else:
+                    parts.append(f"{unit.lower()} {word} to {last3_v} a game (season: {season_v})")
+            trend_text = " and ".join(parts)
+            paragraphs.append(_pick([
+                f"Over their last 3 games that's shifted a bit -- {trend_text}.",
+                f"Recent form looks a little different: {trend_text}.",
+                f"The last 3 games tell a slightly different story -- {trend_text}.",
+            ], seed + 7))
+        else:
+            paragraphs.append(_pick([
+                "Their last 3 games look consistent with the season line -- no real form swing to account for.",
+                "Form has held steady -- the last 3 games track closely with their season averages.",
+            ], seed + 7))
+
+    def fmt_val(key, v):
+        return f"{v}%" if key in ("fg_pct", "tp_pct") else v
+
+    if ranks:
+        best_key = min(ranks, key=lambda k: ranks[k]["team_rank"])
+        worst_key = max(ranks, key=lambda k: ranks[k]["team_rank"])
+        b, w = ranks[best_key], ranks[worst_key]
+
+        if b["opp_rank"] <= 3:
+            strength_variants = [
+                f"Their clearest strength is {b['label'].lower()} -- #{b['team_rank']} of {b['pool']} in the "
+                f"league ({fmt_val(best_key, b['team_value'])}) -- but it won't be an easy edge tonight: "
+                f"{opp_row['name']} are strong there too (#{b['opp_rank']}).",
+                f"{team_row['name']} lean on {b['label'].lower()} as their top strength (#{b['team_rank']} of "
+                f"{b['pool']}), though {possessive(opp_row['name'])} own #{b['opp_rank']} ranking there takes some shine off it.",
+            ]
+        else:
+            strength_variants = [
+                f"Their clearest strength is {b['label'].lower()} -- #{b['team_rank']} of {b['pool']} in the "
+                f"league ({fmt_val(best_key, b['team_value'])}) -- and {opp_row['name']} are only #{b['opp_rank']} "
+                f"there, a real mismatch to lean on.",
+                f"{possessive(team_row['name'])} best category is {b['label'].lower()} (#{b['team_rank']} of {b['pool']}); "
+                f"{opp_row['name']} rank just #{b['opp_rank']} in the same stat, which should hold up as an advantage.",
+            ]
+        paragraphs.append(_pick(strength_variants, seed + 13))
+
+        if w["opp_rank"] <= 3:
+            weakness_variants = [
+                f"On the other end, {w['label'].lower()} is a soft spot -- #{w['team_rank']} of {w['pool']} "
+                f"({fmt_val(worst_key, w['team_value'])}) -- and {opp_row['name']} happen to rank #{w['opp_rank']} "
+                f"there, so it lines up as a real point of attack.",
+                f"Their biggest vulnerability is {w['label'].lower()} (#{w['team_rank']} of {w['pool']}), and "
+                f"{opp_row['name']} are #{w['opp_rank']} in that same category -- not a coincidence worth ignoring.",
+            ]
+        else:
+            weakness_variants = [
+                f"Their softest category is {w['label'].lower()} -- #{w['team_rank']} of {w['pool']} "
+                f"({fmt_val(worst_key, w['team_value'])}) -- though {opp_row['name']} aren't especially strong "
+                f"there either (#{w['opp_rank']}), so it may not decide the game on its own.",
+                f"{possessive(team_row['name'])} weakest number is {w['label'].lower()} (#{w['team_rank']} of {w['pool']}); "
+                f"{opp_row['name']} sit at a modest #{w['opp_rank']} there too, so this alone isn't a guaranteed swing factor.",
+            ]
+        paragraphs.append(_pick(weakness_variants, seed + 19))
+
+    return {"paragraphs": paragraphs}
+
+
 def _rebounding_profile(conn, team_id):
     """This team's league rank/value at generating (and conceding) offensive
     rebounds, split by shot type -- the building block for the Matchup
@@ -665,10 +812,13 @@ def matchup_scout(team_id, opponent_id):
         "opponent": _rebounding_profile(conn, opponent_id),
     }
 
+    basic_summary = _basic_stats_summary(conn, team_id, opponent_id, season_trad, team_row, opp_row)
+
     conn.close()
     return {
         "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["team_logo_url"]},
         "opponent": {"id": opp_row["id"], "name": opp_row["name"], "logo_url": opp_row["team_logo_url"]},
         "keys": keys,
         "rebounding": rebounding,
+        "basic_summary": basic_summary,
     }

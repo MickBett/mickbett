@@ -573,6 +573,8 @@ body.modal-open { overflow: hidden; }
   margin-bottom: 3px;
 }
 .mu-key-text { margin: 0; font-size: 14px; line-height: 1.45; }
+.mu-summary-text { font-size: 14px; line-height: 1.55; margin: 0 0 10px; }
+.mu-summary-text:last-child { margin-bottom: 0; }
 
 .mu-h2h-header { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; flex-wrap: wrap; }
 .mu-h2h-score { font-family: var(--font-display); font-size: 22px; font-weight: 800; }
