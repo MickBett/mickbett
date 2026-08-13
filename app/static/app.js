@@ -1483,22 +1483,24 @@ function muClockPtsCell(row) {
   return `${row.pts.value}${pctPart} ${muRankSpan(row.pts.rank, row.pts.pool)}`;
 }
 
-function muShotClockTableHtml(clockData) {
+function muShotClockTableHtml(clockData, title) {
   if (!clockData || !clockData.rows.length) return "";
   return `
-    <h3 style="margin-top:0">Offense by shot clock</h3>
-    <table class="mu-shotclock-table">
-      <thead><tr><th>Shot clock</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th></tr></thead>
-      <tbody>
-        ${clockData.rows.map(r => `
-          <tr>
-            <td>${r.label}</td>
-            <td class="num">${muClockPtsCell(r)}</td>
-            <td class="num">${muClockPctCell(r.fg2_pct)}</td>
-            <td class="num">${muClockPctCell(r.fg3_pct)}</td>
-          </tr>`).join("")}
-      </tbody>
-    </table>`;
+    <div class="mu-shotclock-col">
+      <h3 style="margin-top:0">${title}</h3>
+      <table class="mu-shotclock-table">
+        <thead><tr><th>Shot clock</th><th class="num">Points</th><th class="num">2PT%</th><th class="num">3PT%</th></tr></thead>
+        <tbody>
+          ${clockData.rows.map(r => `
+            <tr>
+              <td>${r.label}</td>
+              <td class="num">${muClockPtsCell(r)}</td>
+              <td class="num">${muClockPctCell(r.fg2_pct)}</td>
+              <td class="num">${muClockPctCell(r.fg3_pct)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 async function updateMatchup() {
@@ -1506,9 +1508,10 @@ async function updateMatchup() {
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const [data, clockData] = await Promise.all([
+  const [data, offClock, defClock] = await Promise.all([
     fetch(`/api/teams/${teamId}/top-row`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/shot-clock-offense`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/shot-clock-defense`).then(r => r.json()),
   ]);
 
   el.innerHTML = `
@@ -1522,6 +1525,9 @@ async function updateMatchup() {
         ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
         ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
       </div>
-      ${muShotClockTableHtml(clockData)}
+      <div class="mu-shotclock-wrap">
+        ${muShotClockTableHtml(offClock, "Offense by shot clock")}
+        ${muShotClockTableHtml(defClock, "Defense by shot clock")}
+      </div>
     </div>`;
 }

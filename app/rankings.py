@@ -650,14 +650,24 @@ def team_top_row(team_id):
 _SHOT_CLOCK_BUCKETS = [("0-8", "0-8s"), ("8-18", "8-18s"), ("18+", "18+s")]
 
 
-def _pts_by_bucket_ranked(conn, bucket):
-    """Points scored per game within one shot-clock bucket, season-wide,
+def _pts_by_bucket_ranked(conn, bucket, against=False):
+    """Points scored (or, if against=True, points ALLOWED -- what the
+    OPPONENT scored) per game within one shot-clock bucket, season-wide,
     ranked -- pts isn't one of CLOCK_METRICS' single-action stats, so this
     sums 2pt/3pt/freethrow makes into actual points the same way the
-    5-minute-splits endpoint does for its segment scoring."""
-    events = conn.execute(
-        "SELECT team_id AS eid, action_type, made, shot_clock_used FROM pbp_events WHERE team_id IS NOT NULL"
-    ).fetchall()
+    5-minute-splits endpoint does for its segment scoring. against=True
+    ranks ascending (fewer points allowed = rank 1), same convention as
+    every other "allowed" stat in the app."""
+    if against:
+        events = conn.execute(
+            """SELECT g.team1_id AS team1_id, g.team2_id AS team2_id, e.team_id AS actor_id,
+                      e.action_type, e.made, e.shot_clock_used
+               FROM pbp_events e JOIN games g ON g.id = e.game_id"""
+        ).fetchall()
+    else:
+        events = conn.execute(
+            "SELECT team_id AS eid, action_type, made, shot_clock_used FROM pbp_events WHERE team_id IS NOT NULL"
+        ).fetchall()
     gp_rows = conn.execute("SELECT team_id AS id, COUNT(*) AS gp FROM team_game_stats GROUP BY team_id").fetchall()
     gp_map = {r["id"]: r["gp"] for r in gp_rows}
 
@@ -668,10 +678,11 @@ def _pts_by_bucket_ranked(conn, bucket):
             continue
         if not _in_bucket(e["shot_clock_used"], bucket):
             continue
-        totals[e["eid"]] = totals.get(e["eid"], 0) + pts_value[e["action_type"]]
+        eid = (e["team2_id"] if e["actor_id"] == e["team1_id"] else e["team1_id"]) if against else e["eid"]
+        totals[eid] = totals.get(eid, 0) + pts_value[e["action_type"]]
 
     out = [{"id": tid, "value": round(totals.get(tid, 0) / gp, 1)} for tid, gp in gp_map.items() if gp]
-    return _rank(out, "value", "desc")
+    return _rank(out, "value", "asc" if against else "desc")
 
 
 def team_shot_clock_offense(team_id):
@@ -703,6 +714,48 @@ def team_shot_clock_offense(team_id):
                 "bucket": bucket, "label": label,
                 "pts": cell(pts_ranked, pts_r),
                 "pct_of_total_pts": round(pts_r["value"] / total_ppg * 100, 1) if pts_r and total_ppg else None,
+                "fg2_pct": cell(fg2_ranked, fg2_r),
+                "fg3_pct": cell(fg3_ranked, fg3_r),
+            })
+
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["team_logo_url"]},
+            "rows": rows,
+        }
+    finally:
+        conn.close()
+
+
+def team_shot_clock_defense(team_id):
+    """Mirrors team_shot_clock_offense for the against side: points
+    ALLOWED per game (plus what share of total points allowed that window
+    represents), opponent 2PT%/3PT% allowed -- each with league rank
+    (ascending, so rank 1 = best defense in that window, same convention
+    as every other "allowed" stat in the app)."""
+    conn = db.get_conn()
+    try:
+        season_trad = _trad_team_rows(conn)
+        team_row = next((r for r in season_trad if r["id"] == team_id), None)
+        if not team_row:
+            return None
+        total_papg = team_row["papg"]
+
+        def cell(ranked, r):
+            return {"value": r["value"], "rank": r["rank"], "pool": len(ranked)} if r else None
+
+        rows = []
+        for bucket, label in _SHOT_CLOCK_BUCKETS:
+            pts_ranked = _pts_by_bucket_ranked(conn, bucket, against=True)
+            pts_r = next((x for x in pts_ranked if x["id"] == team_id), None)
+            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket, against=True), "value", "asc")
+            fg2_r = next((x for x in fg2_ranked if x["id"] == team_id), None)
+            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket, against=True), "value", "asc")
+            fg3_r = next((x for x in fg3_ranked if x["id"] == team_id), None)
+
+            rows.append({
+                "bucket": bucket, "label": label,
+                "pts": cell(pts_ranked, pts_r),
+                "pct_of_total_pts": round(pts_r["value"] / total_papg * 100, 1) if pts_r and total_papg else None,
                 "fg2_pct": cell(fg2_ranked, fg2_r),
                 "fg3_pct": cell(fg3_ranked, fg3_r),
             })
