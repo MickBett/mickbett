@@ -1503,15 +1503,48 @@ function muShotClockTableHtml(clockData, title) {
     </div>`;
 }
 
+// "What happens next" after an offensive rebound -- 2PT/3PT cells show
+// how often it leads to that shot, with the resulting shooting % in
+// brackets; turnover/fouled are just how often, no shooting % to add.
+function muOrebOutcomeCell(c) {
+  if (!c) return "—";
+  const fgPart = c.make_pct != null ? ` (${c.make_pct}% FG)` : "";
+  return `${c.freq_pct}%${fgPart}`;
+}
+
+function muOrebOutcomesHtml(orebData) {
+  if (!orebData || (!orebData.off_2pt && !orebData.off_3pt)) return "";
+  const rows = [
+    { label: "Off reb — 2PT miss", d: orebData.off_2pt },
+    { label: "Off reb — 3PT miss", d: orebData.off_3pt },
+  ].filter(r => r.d);
+  return `
+    <h3 style="margin-top:22px">Result of an offensive rebound</h3>
+    <table class="mu-shotclock-table">
+      <thead><tr><th>Off reb from</th><th class="num">2PT</th><th class="num">3PT</th><th class="num">Turnover</th><th class="num">Fouled</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td>${r.label}</td>
+            <td class="num">${muOrebOutcomeCell(r.d.fg2)}</td>
+            <td class="num">${muOrebOutcomeCell(r.d.fg3)}</td>
+            <td class="num">${muOrebOutcomeCell(r.d.turnover)}</td>
+            <td class="num">${muOrebOutcomeCell(r.d.fouled)}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
 async function updateMatchup() {
   const teamId = $("#mu-team").value;
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const [data, offClock, defClock] = await Promise.all([
+  const [data, offClock, defClock, orebData] = await Promise.all([
     fetch(`/api/teams/${teamId}/top-row`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/shot-clock-offense`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/shot-clock-defense`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/oreb-outcomes`).then(r => r.json()),
   ]);
 
   el.innerHTML = `
@@ -1529,5 +1562,6 @@ async function updateMatchup() {
         ${muShotClockTableHtml(offClock, "Offense by shot clock")}
         ${muShotClockTableHtml(defClock, "Defense by shot clock")}
       </div>
+      ${muOrebOutcomesHtml(orebData)}
     </div>`;
 }

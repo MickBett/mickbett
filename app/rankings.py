@@ -768,6 +768,85 @@ def team_shot_clock_defense(team_id):
         conn.close()
 
 
+_OREB_OUTCOME_TYPES = {"2pt", "3pt", "turnover", "foulon"}
+
+
+def _oreb_outcome_breakdown(conn, team_id, source):
+    """What happens on the very next possession-relevant event after this
+    team grabs an offensive rebound off a missed `source` (2pt or 3pt)
+    shot -- classified as their next 2PT attempt, 3PT attempt, turnover,
+    or drawn foul, whichever comes first chronologically (action_number).
+    A second consecutive rebound (missed the putback too) is skipped over
+    rather than counted as its own outcome, since it isn't one of the 4
+    categories asked for -- the chain keeps resolving to whichever of the
+    4 eventually follows."""
+    rows = conn.execute(
+        """SELECT game_id, action_number, action_type, off_reb_source, made
+           FROM pbp_events
+           WHERE team_id = ? AND action_type IN ('rebound_off', '2pt', '3pt', 'turnover', 'foulon')
+           ORDER BY game_id, action_number""",
+        (team_id,),
+    ).fetchall()
+
+    by_game = {}
+    for e in rows:
+        by_game.setdefault(e["game_id"], []).append(e)
+
+    counts = {"2pt": 0, "3pt": 0, "turnover": 0, "foulon": 0}
+    makes = {"2pt": 0, "3pt": 0}
+    total = 0
+    for game_events in by_game.values():
+        n = len(game_events)
+        for i, e in enumerate(game_events):
+            if e["action_type"] != "rebound_off" or e["off_reb_source"] != source:
+                continue
+            for j in range(i + 1, n):
+                nxt = game_events[j]
+                if nxt["action_type"] == "rebound_off":
+                    continue
+                total += 1
+                counts[nxt["action_type"]] += 1
+                if nxt["action_type"] in ("2pt", "3pt") and nxt["made"]:
+                    makes[nxt["action_type"]] += 1
+                break
+
+    if not total:
+        return None
+
+    def freq(key):
+        return round(counts[key] / total * 100, 1)
+
+    def make_pct(key):
+        return round(makes[key] / counts[key] * 100, 1) if counts[key] else None
+
+    return {
+        "total": total,
+        "fg2": {"freq_pct": freq("2pt"), "make_pct": make_pct("2pt"), "count": counts["2pt"]},
+        "fg3": {"freq_pct": freq("3pt"), "make_pct": make_pct("3pt"), "count": counts["3pt"]},
+        "turnover": {"freq_pct": freq("turnover"), "count": counts["turnover"]},
+        "fouled": {"freq_pct": freq("foulon"), "count": counts["foulon"]},
+    }
+
+
+def team_oreb_outcomes(team_id):
+    """Backs the Matchup Scout tab's offensive-rebound rundown: after this
+    team grabs an offensive rebound off a missed 2PT (or 3PT), what share
+    of the time does the very next play end in a 2PT attempt, a 3PT
+    attempt, a turnover, or a drawn foul."""
+    conn = db.get_conn()
+    try:
+        team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not team_row:
+            return None
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
+            "off_2pt": _oreb_outcome_breakdown(conn, team_id, "2pt"),
+            "off_3pt": _oreb_outcome_breakdown(conn, team_id, "3pt"),
+        }
+    finally:
+        conn.close()
+
+
 # ------------------------------------------------------ matchup scout (v1) -
 # Superseded by team_season_table() above -- the Matchup Scout tab was
 # rebuilt into a plain season-stats column table. Left in place (currently

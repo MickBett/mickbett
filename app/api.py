@@ -230,6 +230,16 @@ def team_shot_clock_defense(team_id: int):
     return data
 
 
+@router.get("/teams/{team_id}/oreb-outcomes")
+def team_oreb_outcomes(team_id: int):
+    """What happens right after this team grabs an offensive rebound off a
+    missed 2PT or 3PT -- next play's 2PT%/3PT%/turnover/fouled rate."""
+    data = rankings.team_oreb_outcomes(team_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
 @router.get("/matchup-scout")
 def matchup_scout(team_id: int, opponent_id: int):
     """How `opponent_id` might beat `team_id`, plus a verdict on whether
