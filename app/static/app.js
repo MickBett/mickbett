@@ -1616,37 +1616,36 @@ function muScoutBullet(e, color) {
     </li>`;
 }
 
-// One side of the split (Strengths or Weaknesses) -- season list (every
-// qualifying stat, paired with its last-3 read) plus an "emerging" list
-// (stats that only qualify over the last 3 games).
-function muScoutSideHtml(side, title, color, seasonEmptyText, emergingEmptyText) {
-  const season = (side && side.season) || [];
-  const emerging = (side && side.emerging) || [];
+// One column (Strengths or Weaknesses) within a shot-clock slot -- a
+// flat bullet list (each bullet's own text already says whether it's a
+// season-long read or something that only emerged over the last 3).
+function muScoutColumnHtml(title, color, bullets, emptyText) {
   return `
-    <div class="card">
-      <h3 style="margin-top:0">${title}</h3>
-      <div class="mu-strength-subhead">Season (top 3 in the league)</div>
-      ${season.length
-        ? `<ul class="mu-strength-list">${season.map(e => muScoutBullet(e, color)).join("")}</ul>`
-        : `<p class="muted">${seasonEmptyText}</p>`}
-      <div class="mu-strength-subhead">Emerging over the last 3 games</div>
-      ${emerging.length
-        ? `<ul class="mu-strength-list">${emerging.map(e => muScoutBullet(e, color)).join("")}</ul>`
-        : `<p class="muted">${emergingEmptyText}</p>`}
+    <div>
+      <div class="mu-strength-subhead" style="margin-top:0">${title}</div>
+      ${bullets.length
+        ? `<ul class="mu-strength-list">${bullets.map(e => muScoutBullet(e, color)).join("")}</ul>`
+        : `<p class="muted">${emptyText}</p>`}
+    </div>`;
+}
+
+// One shot-clock window (Early Offence/Half Court/Late Clock) -- its
+// own Strengths | Weaknesses side-by-side split, covering points/2PT%/
+// 3PT% on both offense and defense within just that window.
+function muScoutSlotHtml(slot) {
+  return `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0">${slot.label}</h3>
+      <div class="mu-scout-columns">
+        ${muScoutColumnHtml("Strengths", "#4169e1", slot.strengths, "No strength shows up in this window.")}
+        ${muScoutColumnHtml("Weaknesses", "var(--critical)", slot.weaknesses, "No weakness shows up in this window.")}
+      </div>
     </div>`;
 }
 
 function muScoutTakeawaysHtml(data) {
-  if (!data) return "";
-  return `
-    <div class="mu-scout-columns" style="margin-top:16px">
-      ${muScoutSideHtml(data.strengths, "Strengths", "#4169e1",
-        "No stat currently ranks top-3 in the league for the season.",
-        "No stat has newly broken into the top 3 over the last 3 games.")}
-      ${muScoutSideHtml(data.weaknesses, "Weaknesses", "var(--critical)",
-        "No stat currently ranks bottom-3 in the league for the season.",
-        "No stat has newly dropped into the bottom 3 over the last 3 games.")}
-    </div>`;
+  if (!data || !data.slots || !data.slots.length) return "";
+  return data.slots.map(muScoutSlotHtml).join("");
 }
 
 async function updateMatchup() {

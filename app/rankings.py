@@ -725,7 +725,7 @@ def team_top_row(team_id, scope="season"):
         conn.close()
 
 
-_SHOT_CLOCK_BUCKETS = [("0-8", "0-8s"), ("8-18", "8-18s"), ("18+", "18+s")]
+_SHOT_CLOCK_BUCKETS = [("0-8", "Early Offence"), ("8-18", "Half Court"), ("18+", "Late Clock")]
 
 
 def _pts_by_bucket_ranked(conn, bucket, against=False, game_ids_by_team=None):
@@ -962,89 +962,55 @@ def team_oreb_outcomes(team_id, scope="season"):
         conn.close()
 
 
-def _all_tile_stats(conn, team_id, game_ids_by_team=None):
-    """All top-row stats for one team, each with value/rank/pool AND the
-    league average -- the shared lookup behind team_scout_takeaways'
-    strength/weakness picks (and the average is what the frontend draws
-    as the second bar in each takeaway's mini comparison chart)."""
-    season_trad = _trad_team_rows(conn, game_ids_by_team)
-    team_row = next((r for r in season_trad if r["id"] == team_id), None)
-    if not team_row:
-        return None
-    oreb_ranked = _reb_col_ranked(conn, "oreb", game_ids_by_team)
-
-    out = {}
-    for key, label, source, direction in _TOP_ROW_BIG + _TOP_ROW_SMALL:
-        if source == "trad":
-            ranked = _rank(season_trad, key, direction)
-            values = [x[key] for x in ranked]
-        elif source == "clock":
-            ranked = _rank(_clock_rows(conn, "team", key, "overall", game_ids_by_team), "value", direction)
-            values = [x["value"] for x in ranked]
-        else:
-            ranked = oreb_ranked
-            values = [x["value"] for x in ranked]
-        r = next((x for x in ranked if x["id"] == team_id), None)
-        if not r:
-            continue
-        val = r[key] if source == "trad" else r["value"]
-        out[key] = {
-            "key": key, "label": label, "value": val, "rank": r["rank"], "pool": len(ranked),
-            "avg": round(sum(values) / len(values), 1) if values else None,
-            "is_pct": label.endswith("%"),
-        }
-    return out
-
-
 def _stat_bullet(stat, pool_word="league"):
     unit = "%" if stat["is_pct"] else ""
     return f"#{stat['rank']} of {stat['pool']} in the {pool_word} ({stat['value']}{unit})"
 
 
-def _shot_clock_tile_stats(conn, team_id, game_ids_by_team=None):
-    """Points/2PT%/3PT% for each shot-clock window, offense AND defense --
-    same shape as _all_tile_stats' output ({key: {label, value, rank,
-    pool, avg, is_pct}}), built from the exact same ranked data that
-    backs the Offense/Defense by shot clock tables, so the strengths/
-    weaknesses scan below can consider them too, not just the season
-    overall numbers."""
+def _bucket_tile_stats(conn, team_id, bucket, game_ids_by_team=None):
+    """Points/2PT%/3PT% for ONE shot-clock window, offense AND defense --
+    6 candidate stats, each shaped as {label, value, rank, pool, avg,
+    is_pct}, built from the exact same ranked data that backs the
+    Offense/Defense by shot clock tables.
+    Labels have no bucket suffix -- the window itself (Early Offence/
+    Half Court/Late Clock) is the enclosing section, not part of each
+    stat's name."""
     out = {}
-    for bucket, blabel in _SHOT_CLOCK_BUCKETS:
-        pts_off = _pts_by_bucket_ranked(conn, bucket, game_ids_by_team=game_ids_by_team)
-        r = next((x for x in pts_off if x["id"] == team_id), None)
+    pts_off = _pts_by_bucket_ranked(conn, bucket, game_ids_by_team=game_ids_by_team)
+    r = next((x for x in pts_off if x["id"] == team_id), None)
+    if r:
+        values = [x["value"] for x in pts_off]
+        out["off_pts"] = {
+            "label": "Points", "value": r["value"], "rank": r["rank"], "pool": len(pts_off),
+            "avg": round(sum(values) / len(values), 1), "is_pct": False,
+        }
+    for stat, slabel in (("2pt_pct", "2PT%"), ("3pt_pct", "3PT%")):
+        ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team), "value", "desc")
+        r = next((x for x in ranked if x["id"] == team_id), None)
         if r:
-            values = [x["value"] for x in pts_off]
-            out[f"off_pts_{bucket}"] = {
-                "label": f"Points ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(pts_off),
-                "avg": round(sum(values) / len(values), 1), "is_pct": False,
+            values = [x["value"] for x in ranked]
+            out[f"off_{stat}"] = {
+                "label": slabel, "value": r["value"], "rank": r["rank"], "pool": len(ranked),
+                "avg": round(sum(values) / len(values), 1), "is_pct": True,
             }
-        for stat, slabel in (("2pt_pct", "2PT%"), ("3pt_pct", "3PT%")):
-            ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team), "value", "desc")
-            r = next((x for x in ranked if x["id"] == team_id), None)
-            if r:
-                values = [x["value"] for x in ranked]
-                out[f"off_{stat}_{bucket}"] = {
-                    "label": f"{slabel} ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(ranked),
-                    "avg": round(sum(values) / len(values), 1), "is_pct": True,
-                }
 
-        pts_def = _pts_by_bucket_ranked(conn, bucket, against=True, game_ids_by_team=game_ids_by_team)
-        r = next((x for x in pts_def if x["id"] == team_id), None)
+    pts_def = _pts_by_bucket_ranked(conn, bucket, against=True, game_ids_by_team=game_ids_by_team)
+    r = next((x for x in pts_def if x["id"] == team_id), None)
+    if r:
+        values = [x["value"] for x in pts_def]
+        out["def_pts"] = {
+            "label": "Points Allowed", "value": r["value"], "rank": r["rank"], "pool": len(pts_def),
+            "avg": round(sum(values) / len(values), 1), "is_pct": False,
+        }
+    for stat, slabel in (("2pt_pct", "Opp 2PT%"), ("3pt_pct", "Opp 3PT%")):
+        ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team, against=True), "value", "asc")
+        r = next((x for x in ranked if x["id"] == team_id), None)
         if r:
-            values = [x["value"] for x in pts_def]
-            out[f"def_pts_{bucket}"] = {
-                "label": f"Points Allowed ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(pts_def),
-                "avg": round(sum(values) / len(values), 1), "is_pct": False,
+            values = [x["value"] for x in ranked]
+            out[f"def_{stat}"] = {
+                "label": slabel, "value": r["value"], "rank": r["rank"], "pool": len(ranked),
+                "avg": round(sum(values) / len(values), 1), "is_pct": True,
             }
-        for stat, slabel in (("2pt_pct", "Opp 2PT%"), ("3pt_pct", "Opp 3PT%")):
-            ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team, against=True), "value", "asc")
-            r = next((x for x in ranked if x["id"] == team_id), None)
-            if r:
-                values = [x["value"] for x in ranked]
-                out[f"def_{stat}_{bucket}"] = {
-                    "label": f"{slabel} ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(ranked),
-                    "avg": round(sum(values) / len(values), 1), "is_pct": True,
-                }
     return out
 
 
@@ -1101,36 +1067,36 @@ def _scout_bullets(season_stats, last3_stats, side):
 
 
 def team_scout_takeaways(team_id):
-    """Data-backed scouting takeaways for team_id, split into strengths
-    and weaknesses (for a side-by-side layout): every stat -- both the
-    season-overall numbers AND the shot-clock offense/defense splits --
-    ranked top-3 in the league is a "strength", bottom-3 a "weakness",
-    each paired with how that same stat looks over the last 3 games. Any
-    stat that only qualifies over the last 3 games (not for the season)
-    is flagged separately as "emerging". Every entry carries value/rank/
-    comparison-value so the frontend can draw a small bar-chart alongside
-    the text."""
+    """Strengths/weaknesses assessed per shot-clock window (Early
+    Offence/Half Court/Late Clock) rather than one flat list -- each
+    window's 6 candidate stats (points/2PT%/3PT% on both offense and
+    defense) are scanned for top-3 league rank (a "strength") or bottom-3
+    ("weakness"), every bullet noting the last-3 read too so a scout can
+    read straight down "what's true early in the clock" vs "late"."""
     conn = db.get_conn()
     try:
         team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not team_row:
             return None
-        tile_season = _all_tile_stats(conn, team_id)
-        if not tile_season:
-            return None
-        season_stats = {**tile_season, **_shot_clock_tile_stats(conn, team_id)}
-
         last3_ids_by_team = _last3_game_ids_by_team(conn)
-        tile_last3 = _all_tile_stats(conn, team_id, last3_ids_by_team)
-        last3_stats = {**tile_last3, **_shot_clock_tile_stats(conn, team_id, last3_ids_by_team)} if tile_last3 else {}
 
-        season_strengths, emerging_strengths = _scout_bullets(season_stats, last3_stats, "strength")
-        season_weaknesses, emerging_weaknesses = _scout_bullets(season_stats, last3_stats, "weakness")
+        slots = []
+        for bucket, label in _SHOT_CLOCK_BUCKETS:
+            season_stats = _bucket_tile_stats(conn, team_id, bucket)
+            if not season_stats:
+                continue
+            last3_stats = _bucket_tile_stats(conn, team_id, bucket, last3_ids_by_team)
+            s_season, s_emerging = _scout_bullets(season_stats, last3_stats, "strength")
+            w_season, w_emerging = _scout_bullets(season_stats, last3_stats, "weakness")
+            slots.append({
+                "bucket": bucket, "label": label,
+                "strengths": s_season + s_emerging,
+                "weaknesses": w_season + w_emerging,
+            })
 
         return {
             "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
-            "strengths": {"season": season_strengths, "emerging": emerging_strengths},
-            "weaknesses": {"season": season_weaknesses, "emerging": emerging_weaknesses},
+            "slots": slots,
         }
     finally:
         conn.close()
