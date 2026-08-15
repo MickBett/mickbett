@@ -626,10 +626,11 @@ def team_last3_results(team_id):
         conn.close()
 
 
-def _dreb_ranked(conn, game_ids_by_team=None):
-    """Defensive rebounds per game, ranked -- pulled directly from
-    team_game_stats.dreb since (unlike offensive boards) it isn't split by
-    shot type or shot-clock bucket anywhere else in the app."""
+def _reb_col_ranked(conn, column, game_ids_by_team=None):
+    """Total rebounds per game for `column` ("oreb" or "dreb"), ranked --
+    pulled directly from team_game_stats since this is the combined
+    (not split by shot type/shot-clock bucket) number. `column` is always
+    one of our own two hardcoded literals, never external input."""
     if game_ids_by_team is not None:
         out = []
         for tid, gids in game_ids_by_team.items():
@@ -637,7 +638,7 @@ def _dreb_ranked(conn, game_ids_by_team=None):
                 continue
             placeholders = ",".join("?" * len(gids))
             row = conn.execute(
-                f"SELECT SUM(dreb) AS total, COUNT(*) AS gp FROM team_game_stats "
+                f"SELECT SUM({column}) AS total, COUNT(*) AS gp FROM team_game_stats "
                 f"WHERE team_id = ? AND game_id IN ({placeholders})",
                 (tid, *gids),
             ).fetchone()
@@ -646,7 +647,7 @@ def _dreb_ranked(conn, game_ids_by_team=None):
         return _rank(out, "value", "desc")
 
     rows = conn.execute(
-        """SELECT team_id AS id, SUM(dreb) AS total, COUNT(*) AS gp
+        f"""SELECT team_id AS id, SUM({column}) AS total, COUNT(*) AS gp
            FROM team_game_stats GROUP BY team_id"""
     ).fetchall()
     out = [{"id": r["id"], "value": round(r["total"] / r["gp"], 1)} for r in rows if r["gp"]]
@@ -654,15 +655,16 @@ def _dreb_ranked(conn, game_ids_by_team=None):
 
 
 # (key, label, source, direction) -- source: "trad" (TRAD_TEAM_METRICS-style
-# per-game average), "clock" (season-wide clock:*:overall stat), or "dreb".
+# per-game average), "clock" (season-wide clock:*:overall stat), or "oreb"
+# (combined offensive rebounds, not split by shot type -- that split lives
+# in the "Result of an offensive rebound" table instead). Defensive
+# rebounds aren't tracked here at all -- not useful for this tab.
 _TOP_ROW_BIG = [
     ("ppg", "PPG", "trad", "desc"),
     ("papg", "PAPG", "trad", "asc"),
     ("2pt_pct", "2PT%", "clock", "desc"),
     ("3pt_pct", "3PT%", "clock", "desc"),
-    ("oreb_2pt", "OREB (2PT)", "clock", "desc"),
-    ("oreb_3pt", "OREB (3PT)", "clock", "desc"),
-    ("dreb", "DREB", "dreb", "desc"),
+    ("oreb", "OREB", "oreb", "desc"),
 ]
 _TOP_ROW_SMALL = [
     ("apg", "AST", "trad", "desc"),
@@ -689,7 +691,7 @@ def team_top_row(team_id, scope="season"):
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
-        dreb_ranked = _dreb_ranked(conn, game_ids_by_team)
+        oreb_ranked = _reb_col_ranked(conn, "oreb", game_ids_by_team)
 
         def build(key, label, source, direction):
             if source == "trad":
@@ -701,7 +703,7 @@ def team_top_row(team_id, scope="season"):
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r["value"] if r else None
             else:
-                ranked = dreb_ranked
+                ranked = oreb_ranked
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r["value"] if r else None
             if r is None:
@@ -961,15 +963,15 @@ def team_oreb_outcomes(team_id, scope="season"):
 
 
 def _all_tile_stats(conn, team_id, game_ids_by_team=None):
-    """All 12 top-row stats for one team, each with value/rank/pool AND
-    the league average -- the shared lookup behind team_scout_takeaways'
-    strength/weakness/trend picks (and the average is what the frontend
-    draws as the second bar in each takeaway's mini comparison chart)."""
+    """All top-row stats for one team, each with value/rank/pool AND the
+    league average -- the shared lookup behind team_scout_takeaways'
+    strength/weakness picks (and the average is what the frontend draws
+    as the second bar in each takeaway's mini comparison chart)."""
     season_trad = _trad_team_rows(conn, game_ids_by_team)
     team_row = next((r for r in season_trad if r["id"] == team_id), None)
     if not team_row:
         return None
-    dreb_ranked = _dreb_ranked(conn, game_ids_by_team)
+    oreb_ranked = _reb_col_ranked(conn, "oreb", game_ids_by_team)
 
     out = {}
     for key, label, source, direction in _TOP_ROW_BIG + _TOP_ROW_SMALL:
@@ -980,7 +982,7 @@ def _all_tile_stats(conn, team_id, game_ids_by_team=None):
             ranked = _rank(_clock_rows(conn, "team", key, "overall", game_ids_by_team), "value", direction)
             values = [x["value"] for x in ranked]
         else:
-            ranked = dreb_ranked
+            ranked = oreb_ranked
             values = [x["value"] for x in ranked]
         r = next((x for x in ranked if x["id"] == team_id), None)
         if not r:
@@ -999,103 +1001,136 @@ def _stat_bullet(stat, pool_word="league"):
     return f"#{stat['rank']} of {stat['pool']} in the {pool_word} ({stat['value']}{unit})"
 
 
+def _shot_clock_tile_stats(conn, team_id, game_ids_by_team=None):
+    """Points/2PT%/3PT% for each shot-clock window, offense AND defense --
+    same shape as _all_tile_stats' output ({key: {label, value, rank,
+    pool, avg, is_pct}}), built from the exact same ranked data that
+    backs the Offense/Defense by shot clock tables, so the strengths/
+    weaknesses scan below can consider them too, not just the season
+    overall numbers."""
+    out = {}
+    for bucket, blabel in _SHOT_CLOCK_BUCKETS:
+        pts_off = _pts_by_bucket_ranked(conn, bucket, game_ids_by_team=game_ids_by_team)
+        r = next((x for x in pts_off if x["id"] == team_id), None)
+        if r:
+            values = [x["value"] for x in pts_off]
+            out[f"off_pts_{bucket}"] = {
+                "label": f"Points ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(pts_off),
+                "avg": round(sum(values) / len(values), 1), "is_pct": False,
+            }
+        for stat, slabel in (("2pt_pct", "2PT%"), ("3pt_pct", "3PT%")):
+            ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team), "value", "desc")
+            r = next((x for x in ranked if x["id"] == team_id), None)
+            if r:
+                values = [x["value"] for x in ranked]
+                out[f"off_{stat}_{bucket}"] = {
+                    "label": f"{slabel} ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(ranked),
+                    "avg": round(sum(values) / len(values), 1), "is_pct": True,
+                }
+
+        pts_def = _pts_by_bucket_ranked(conn, bucket, against=True, game_ids_by_team=game_ids_by_team)
+        r = next((x for x in pts_def if x["id"] == team_id), None)
+        if r:
+            values = [x["value"] for x in pts_def]
+            out[f"def_pts_{bucket}"] = {
+                "label": f"Points Allowed ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(pts_def),
+                "avg": round(sum(values) / len(values), 1), "is_pct": False,
+            }
+        for stat, slabel in (("2pt_pct", "Opp 2PT%"), ("3pt_pct", "Opp 3PT%")):
+            ranked = _rank(_clock_rows(conn, "team", stat, bucket, game_ids_by_team, against=True), "value", "asc")
+            r = next((x for x in ranked if x["id"] == team_id), None)
+            if r:
+                values = [x["value"] for x in ranked]
+                out[f"def_{stat}_{bucket}"] = {
+                    "label": f"{slabel} ({blabel})", "value": r["value"], "rank": r["rank"], "pool": len(ranked),
+                    "avg": round(sum(values) / len(values), 1), "is_pct": True,
+                }
+    return out
+
+
+def _scout_bullets(season_stats, last3_stats, side):
+    """side: "strength" (top-3 league rank) or "weakness" (bottom-3).
+    Returns (season_list, emerging_list): every qualifying season stat
+    paired with its last-3 read, plus any stat that ONLY qualifies over
+    the last 3 games. Shared by both sides of team_scout_takeaways so the
+    (symmetric) weakness scan doesn't duplicate the strength scan."""
+    def qualifies(rank, pool):
+        return rank <= 3 if side == "strength" else rank > pool - 3
+
+    def fmt(stat):
+        return f"{stat['value']}%" if stat["is_pct"] else stat["value"]
+
+    season_list, emerging_list = [], []
+    for key, s in season_stats.items():
+        l3 = last3_stats.get(key) if last3_stats else None
+        if qualifies(s["rank"], s["pool"]):
+            entry = {
+                "label": s["label"], "value": s["value"], "rank": s["rank"], "pool": s["pool"], "is_pct": s["is_pct"],
+                "compare_label": "League avg", "compare_value": s["avg"],
+            }
+            if l3:
+                if side == "strength":
+                    trend = ("holding up" if l3["rank"] <= 3
+                              else "cooled to the middle of the pack" if l3["rank"] <= 7 else "fallen off")
+                else:
+                    trend = ("still a problem" if l3["rank"] > l3["pool"] - 3
+                              else "improved to the middle of the pack" if l3["rank"] > 3 else "turned into a strength")
+                entry["text"] = (
+                    f"{s['label']} -- {_stat_bullet(s)} this season, {trend} over the last 3 "
+                    f"(#{l3['rank']} of {l3['pool']}, {fmt(l3)})."
+                )
+                entry["last3_value"], entry["last3_rank"], entry["last3_pool"] = l3["value"], l3["rank"], l3["pool"]
+            else:
+                entry["text"] = f"{s['label']} -- {_stat_bullet(s)} this season ({fmt(s)})."
+            season_list.append(entry)
+        if l3 and qualifies(l3["rank"], l3["pool"]) and not qualifies(s["rank"], s["pool"]):
+            noun = "strength" if side == "strength" else "weakness"
+            emerging_list.append({
+                "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
+                "compare_label": "Season", "compare_value": s["value"],
+                "text": (
+                    f"{s['label']} -- #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}), not a "
+                    f"season-long {noun} (#{s['rank']} of {s['pool']}, {fmt(s)})."
+                ),
+            })
+
+    reverse = side == "weakness"
+    season_list.sort(key=lambda e: e["rank"], reverse=reverse)
+    emerging_list.sort(key=lambda e: e["rank"], reverse=reverse)
+    return season_list, emerging_list
+
+
 def team_scout_takeaways(team_id):
-    """Data-backed scouting takeaways for team_id: every season stat
-    ranked top-3 in the league (a "strength"), each paired with how that
-    same stat looks over the last 3 games; any stat that's ranked top-3
-    over just the last 3 games WITHOUT being a season-long strength (an
-    "emerging" strength); plus a single season-long weakness and the
-    biggest last3-vs-season rank swing, same as before. Every entry
-    carries value/rank/comparison-value so the frontend can draw a small
-    bar-chart alongside the text."""
+    """Data-backed scouting takeaways for team_id, split into strengths
+    and weaknesses (for a side-by-side layout): every stat -- both the
+    season-overall numbers AND the shot-clock offense/defense splits --
+    ranked top-3 in the league is a "strength", bottom-3 a "weakness",
+    each paired with how that same stat looks over the last 3 games. Any
+    stat that only qualifies over the last 3 games (not for the season)
+    is flagged separately as "emerging". Every entry carries value/rank/
+    comparison-value so the frontend can draw a small bar-chart alongside
+    the text."""
     conn = db.get_conn()
     try:
         team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not team_row:
             return None
-        season_stats = _all_tile_stats(conn, team_id)
-        if not season_stats:
+        tile_season = _all_tile_stats(conn, team_id)
+        if not tile_season:
             return None
-        last3_stats = _all_tile_stats(conn, team_id, _last3_game_ids_by_team(conn))
+        season_stats = {**tile_season, **_shot_clock_tile_stats(conn, team_id)}
 
-        name = team_row["name"]
-        seed = team_id * 23
+        last3_ids_by_team = _last3_game_ids_by_team(conn)
+        tile_last3 = _all_tile_stats(conn, team_id, last3_ids_by_team)
+        last3_stats = {**tile_last3, **_shot_clock_tile_stats(conn, team_id, last3_ids_by_team)} if tile_last3 else {}
 
-        def fmt(stat):
-            return f"{stat['value']}%" if stat["is_pct"] else stat["value"]
-
-        # --- strengths: every season top-3, each paired with its last-3
-        # read, plus any stat that's ONLY a top-3 over the last 3 games. ---
-        season_strengths = []
-        emerging_strengths = []
-        for key, s in season_stats.items():
-            l3 = last3_stats.get(key) if last3_stats else None
-            if s["rank"] <= 3:
-                entry = {
-                    "label": s["label"], "value": s["value"], "rank": s["rank"], "pool": s["pool"], "is_pct": s["is_pct"],
-                    "compare_label": "League avg", "compare_value": s["avg"],
-                }
-                if l3:
-                    trend = "holding up" if l3["rank"] <= 3 else ("cooled to the middle of the pack" if l3["rank"] <= 7 else "fallen off")
-                    entry["text"] = (
-                        f"{s['label']} -- {_stat_bullet(s)} this season, {trend} over the last 3 "
-                        f"(#{l3['rank']} of {l3['pool']}, {fmt(l3)})."
-                    )
-                    entry["last3_value"], entry["last3_rank"], entry["last3_pool"] = l3["value"], l3["rank"], l3["pool"]
-                else:
-                    entry["text"] = f"{s['label']} -- {_stat_bullet(s)} this season ({fmt(s)})."
-                season_strengths.append(entry)
-            if l3 and l3["rank"] <= 3 and s["rank"] > 3:
-                emerging_strengths.append({
-                    "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
-                    "compare_label": "Season", "compare_value": s["value"],
-                    "text": (
-                        f"{s['label']} -- #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}), not a "
-                        f"season-long strength (#{s['rank']} of {s['pool']}, {fmt(s)})."
-                    ),
-                })
-        season_strengths.sort(key=lambda e: e["rank"])
-        emerging_strengths.sort(key=lambda e: e["rank"])
-
-        takeaways = []
-
-        worst_key = max(season_stats, key=lambda k: season_stats[k]["rank"])
-        w = season_stats[worst_key]
-        takeaways.append({
-            "kind": "weakness",
-            "headline": _pick([
-                f"Their biggest vulnerability is {w['label']} -- #{w['rank']} of {w['pool']} ({fmt(w)}), "
-                f"well off the {w['avg']}{'%' if w['is_pct'] else ''} league average.",
-                f"{name} are exploitable in {w['label']}: #{w['rank']} of {w['pool']} at {fmt(w)}, "
-                f"against a {w['avg']}{'%' if w['is_pct'] else ''} league average.",
-            ], seed + 7),
-            "label": w["label"], "value": w["value"], "rank": w["rank"], "pool": w["pool"], "is_pct": w["is_pct"],
-            "compare_value": w["avg"], "compare_label": "League avg",
-        })
-
-        if last3_stats:
-            common = [k for k in season_stats if k in last3_stats]
-            swing_key = max(common, key=lambda k: abs(last3_stats[k]["rank"] - season_stats[k]["rank"]))
-            s, l3 = season_stats[swing_key], last3_stats[swing_key]
-            swing = l3["rank"] - s["rank"]
-            direction = "improved" if swing < 0 else ("dipped" if swing > 0 else "held steady")
-            takeaways.append({
-                "kind": "trend",
-                "headline": _pick([
-                    f"Form has {direction} in {s['label']} recently: #{s['rank']} of {s['pool']} on the "
-                    f"season ({fmt(s)}) but #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}).",
-                    f"Watch {s['label']} -- {name} have {direction} there lately, from #{s['rank']} of "
-                    f"{s['pool']} ({fmt(s)}) on the season to #{l3['rank']} of {l3['pool']} ({fmt(l3)}) in the last 3.",
-                ], seed + 13),
-                "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
-                "compare_value": s["value"], "compare_label": "Season avg",
-            })
+        season_strengths, emerging_strengths = _scout_bullets(season_stats, last3_stats, "strength")
+        season_weaknesses, emerging_weaknesses = _scout_bullets(season_stats, last3_stats, "weakness")
 
         return {
             "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
-            "season_strengths": season_strengths,
-            "emerging_strengths": emerging_strengths,
-            "takeaways": takeaways,
+            "strengths": {"season": season_strengths, "emerging": emerging_strengths},
+            "weaknesses": {"season": season_weaknesses, "emerging": emerging_weaknesses},
         }
     finally:
         conn.close()

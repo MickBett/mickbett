@@ -1583,13 +1583,11 @@ function muLast3GamesListHtml(resultsData) {
     </table>`;
 }
 
-// Closing "3 scouting takeaways" section -- each headline is backed by a
-// small 2-bar chart (this team's number vs. the league/season comparison
-// point named in compare_label), so the claim has visual evidence
-// alongside the data already spelled out in the text.
-const MU_TAKEAWAY_COLOR = { strength: "#4169e1", weakness: "var(--critical)", trend: "var(--series-2)" };
-const MU_TAKEAWAY_LABEL = { strength: "Strength", weakness: "Weakness", trend: "Recent form" };
-
+// Closing "Strengths / Weaknesses" section -- side by side, each bullet
+// backed by a small 2-bar chart (this team's number vs. the league
+// average, or their own season number for "emerging" bullets), so every
+// claim has visual evidence alongside the data spelled out in the text.
+// Covers season-overall AND shot-clock offense/defense splits.
 function muTakeawayBar(label, value, displayValue, max, color) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
   return `
@@ -1600,8 +1598,7 @@ function muTakeawayBar(label, value, displayValue, max, color) {
     </div>`;
 }
 
-// Shared by both the takeaway cards and the strength bullets below --
-// draws the "this stat" bar plus its comparison bar, given anything with
+// Draws the "this stat" bar plus its comparison bar, given anything with
 // {label, value, is_pct, compare_label, compare_value}.
 function muEntryBars(entry, color) {
   const dispVal = entry.is_pct ? `${entry.value}%` : entry.value;
@@ -1611,44 +1608,44 @@ function muEntryBars(entry, color) {
        + muTakeawayBar(entry.compare_label, entry.compare_value, dispCmp, max, "var(--text-muted)");
 }
 
-function muTakeawaysHtml(data) {
-  if (!data || !data.takeaways.length) return "";
+function muScoutBullet(e, color) {
   return `
-    <div class="card" style="margin-top:16px">
-      <h3 style="margin-top:0">Other takeaways</h3>
-      <div class="mu-takeaway-grid">
-        ${data.takeaways.map(t => `
-            <div class="mu-takeaway">
-              <div class="mu-takeaway-tag" style="color:${MU_TAKEAWAY_COLOR[t.kind]}">${MU_TAKEAWAY_LABEL[t.kind]}</div>
-              <p class="mu-summary-text">${t.headline}</p>
-              ${muEntryBars(t, MU_TAKEAWAY_COLOR[t.kind])}
-            </div>`).join("")}
-      </div>
+    <li class="mu-strength-item">
+      <p class="mu-summary-text" style="margin:0 0 6px">${e.text}</p>
+      ${muEntryBars(e, color)}
+    </li>`;
+}
+
+// One side of the split (Strengths or Weaknesses) -- season list (every
+// qualifying stat, paired with its last-3 read) plus an "emerging" list
+// (stats that only qualify over the last 3 games).
+function muScoutSideHtml(side, title, color, seasonEmptyText, emergingEmptyText) {
+  const season = (side && side.season) || [];
+  const emerging = (side && side.emerging) || [];
+  return `
+    <div class="card">
+      <h3 style="margin-top:0">${title}</h3>
+      <div class="mu-strength-subhead">Season (top 3 in the league)</div>
+      ${season.length
+        ? `<ul class="mu-strength-list">${season.map(e => muScoutBullet(e, color)).join("")}</ul>`
+        : `<p class="muted">${seasonEmptyText}</p>`}
+      <div class="mu-strength-subhead">Emerging over the last 3 games</div>
+      ${emerging.length
+        ? `<ul class="mu-strength-list">${emerging.map(e => muScoutBullet(e, color)).join("")}</ul>`
+        : `<p class="muted">${emergingEmptyText}</p>`}
     </div>`;
 }
 
-// Full strengths breakdown: every season top-3 stat (paired with its
-// last-3 read) plus any stat that's ONLY top-3 over the last 3 games.
-function muStrengthsSectionHtml(data) {
+function muScoutTakeawaysHtml(data) {
   if (!data) return "";
-  const season = data.season_strengths || [];
-  const emerging = data.emerging_strengths || [];
-  const bullet = (e) => `
-    <li class="mu-strength-item">
-      <p class="mu-summary-text" style="margin:0 0 6px">${e.text}</p>
-      ${muEntryBars(e, "#4169e1")}
-    </li>`;
   return `
-    <div class="card" style="margin-top:16px">
-      <h3 style="margin-top:0">Strengths</h3>
-      <div class="mu-strength-subhead">Season strengths (top 3 in the league)</div>
-      ${season.length
-        ? `<ul class="mu-strength-list">${season.map(bullet).join("")}</ul>`
-        : `<p class="muted">No stat currently ranks top-3 in the league for the season.</p>`}
-      <div class="mu-strength-subhead">Emerging over the last 3 games</div>
-      ${emerging.length
-        ? `<ul class="mu-strength-list">${emerging.map(bullet).join("")}</ul>`
-        : `<p class="muted">No stat has newly broken into the top 3 over the last 3 games.</p>`}
+    <div class="mu-scout-columns" style="margin-top:16px">
+      ${muScoutSideHtml(data.strengths, "Strengths", "#4169e1",
+        "No stat currently ranks top-3 in the league for the season.",
+        "No stat has newly broken into the top 3 over the last 3 games.")}
+      ${muScoutSideHtml(data.weaknesses, "Weaknesses", "var(--critical)",
+        "No stat currently ranks bottom-3 in the league for the season.",
+        "No stat has newly dropped into the bottom 3 over the last 3 games.")}
     </div>`;
 }
 
@@ -1672,6 +1669,5 @@ async function updateMatchup() {
       ${muLast3GamesListHtml(page.last3_results)}
       ${muScoutCardBodyHtml(page.top_row_last3, page.shot_clock_offense_last3, page.shot_clock_defense_last3, page.oreb_outcomes_last3)}
     </div>
-    ${muStrengthsSectionHtml(page.takeaways)}
-    ${muTakeawaysHtml(page.takeaways)}`;
+    ${muScoutTakeawaysHtml(page.takeaways)}`;
 }

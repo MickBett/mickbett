@@ -602,12 +602,10 @@ body.modal-open { overflow: hidden; }
 .mu-shotclock-rank.tier-bottom { color: var(--critical); }
 .mu-oreb-pct { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
 
-.mu-takeaway-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+.mu-scout-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) {
-  .mu-takeaway-grid { grid-template-columns: 1fr; }
+  .mu-scout-columns { grid-template-columns: 1fr; }
 }
-.mu-takeaway { background: var(--surface-1); border-radius: 10px; padding: 14px; }
-.mu-takeaway-tag { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 .mu-takeaway-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 11.5px; }
 .mu-takeaway-bar-label {
   flex: none;
