@@ -1544,33 +1544,69 @@ function muOrebOutcomesHtml(orebData) {
     </div>`;
 }
 
+// Shared by both the season card and the Last 3 Games card -- identical
+// layout, just fed different (season- or last3-scoped) data.
+function muScoutCardBodyHtml(data, offClock, defClock, orebData) {
+  return `
+    <div class="mu-toprow">
+      <img class="mu-toprow-logo" src="${data.team.logo_url || ""}" alt="${data.team.name}" onerror="this.remove()">
+      <span class="mu-toprow-record">${data.record}</span>
+      <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
+    </div>
+    <div class="mu-tile-row">
+      ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
+      ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
+    </div>
+    <div class="mu-shotclock-wrap">
+      ${muShotClockTableHtml(offClock, "Offense by shot clock")}
+      ${muShotClockTableHtml(defClock, "Defense by shot clock")}
+      ${muOrebOutcomesHtml(orebData)}
+    </div>`;
+}
+
+// The 3 individual results (date, opponent, W/L, score) that back up the
+// last-3 record shown in the card heading.
+function muLast3GamesListHtml(resultsData) {
+  if (!resultsData || !resultsData.games.length) return "";
+  return `
+    <table class="mu-shotclock-table" style="margin-bottom:18px">
+      <thead><tr><th>Date</th><th>Opponent</th><th class="num">Result</th><th class="num">Score</th></tr></thead>
+      <tbody>
+        ${resultsData.games.map(g => `
+          <tr>
+            <td>${g.game_date}</td>
+            <td>${nameCell(teamLogo(g.opponent.logo_url, g.opponent.name), g.opponent.name)}</td>
+            <td class="num" style="color:${g.won ? "var(--good)" : "var(--critical)"}; font-weight:700">${g.won ? "W" : "L"}</td>
+            <td class="num">${g.team_score}-${g.opponent_score}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
 async function updateMatchup() {
   const teamId = $("#mu-team").value;
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const [data, offClock, defClock, orebData] = await Promise.all([
+  const [data, offClock, defClock, orebData, l3Data, l3OffClock, l3DefClock, l3OrebData, l3Results] = await Promise.all([
     fetch(`/api/teams/${teamId}/top-row`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/shot-clock-offense`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/shot-clock-defense`).then(r => r.json()),
     fetch(`/api/teams/${teamId}/oreb-outcomes`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/top-row?scope=last3`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/shot-clock-offense?scope=last3`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/shot-clock-defense?scope=last3`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/oreb-outcomes?scope=last3`).then(r => r.json()),
+    fetch(`/api/teams/${teamId}/last3-results`).then(r => r.json()),
   ]);
 
   el.innerHTML = `
     <div class="card">
-      <div class="mu-toprow">
-        <img class="mu-toprow-logo" src="${data.team.logo_url || ""}" alt="${data.team.name}" onerror="this.remove()">
-        <span class="mu-toprow-record">${data.record}</span>
-        <span class="mu-toprow-team">${data.team.name} · ${data.gp} games</span>
-      </div>
-      <div class="mu-tile-row">
-        ${data.big.map(s => muStatTile(s, "mu-stat")).join("")}
-        ${data.small.map(s => muStatTile(s, "mu-stat-small")).join("")}
-      </div>
-      <div class="mu-shotclock-wrap">
-        ${muShotClockTableHtml(offClock, "Offense by shot clock")}
-        ${muShotClockTableHtml(defClock, "Defense by shot clock")}
-        ${muOrebOutcomesHtml(orebData)}
-      </div>
+      ${muScoutCardBodyHtml(data, offClock, defClock, orebData)}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0">Last 3 games — ${l3Results.record}</h3>
+      ${muLast3GamesListHtml(l3Results)}
+      ${muScoutCardBodyHtml(l3Data, l3OffClock, l3DefClock, l3OrebData)}
     </div>`;
 }

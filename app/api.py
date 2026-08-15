@@ -201,40 +201,51 @@ def _matchup_lineup_summary(conn, team_id, game_ids, top_n=5):
 
 
 @router.get("/teams/{team_id}/top-row")
-def team_top_row(team_id: int):
+def team_top_row(team_id: int, scope: str = "season"):
     """Backs the Matchup Scout tab's top-line stat strip -- see
-    rankings.team_top_row for the exact stat list and layout it drives."""
-    data = rankings.team_top_row(team_id)
+    rankings.team_top_row for the exact stat list and layout it drives.
+    scope: "season" (default) or "last3"."""
+    data = rankings.team_top_row(team_id, scope)
     if not data:
         raise HTTPException(status_code=404, detail="Team not found")
     return data
 
 
 @router.get("/teams/{team_id}/shot-clock-offense")
-def team_shot_clock_offense(team_id: int):
+def team_shot_clock_offense(team_id: int, scope: str = "season"):
     """Offense by shot-clock window (points + % of total scoring, 2PT%,
     3PT%, each ranked) -- sits under the Matchup Scout top-row strip."""
-    data = rankings.team_shot_clock_offense(team_id)
+    data = rankings.team_shot_clock_offense(team_id, scope)
     if not data:
         raise HTTPException(status_code=404, detail="Team not found")
     return data
 
 
 @router.get("/teams/{team_id}/shot-clock-defense")
-def team_shot_clock_defense(team_id: int):
+def team_shot_clock_defense(team_id: int, scope: str = "season"):
     """Defense by shot-clock window -- mirrors shot-clock-offense for
     points/2PT%/3PT% ALLOWED, each ranked (rank 1 = best defense)."""
-    data = rankings.team_shot_clock_defense(team_id)
+    data = rankings.team_shot_clock_defense(team_id, scope)
     if not data:
         raise HTTPException(status_code=404, detail="Team not found")
     return data
 
 
 @router.get("/teams/{team_id}/oreb-outcomes")
-def team_oreb_outcomes(team_id: int):
+def team_oreb_outcomes(team_id: int, scope: str = "season"):
     """What happens right after this team grabs an offensive rebound off a
     missed 2PT or 3PT -- next play's 2PT%/3PT%/turnover/fouled rate."""
-    data = rankings.team_oreb_outcomes(team_id)
+    data = rankings.team_oreb_outcomes(team_id, scope)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
+@router.get("/teams/{team_id}/last3-results")
+def team_last3_results(team_id: int):
+    """Record + game-by-game results (opponent, score, W/L) over the last
+    3 games -- header for the Matchup Scout tab's "Last 3 Games" card."""
+    data = rankings.team_last3_results(team_id)
     if not data:
         raise HTTPException(status_code=404, detail="Team not found")
     return data

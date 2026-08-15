@@ -570,10 +570,81 @@ def team_weaknesses(team_id, top_n=4):
 
 
 # ------------------------------------------------------------ matchup scout
-def _dreb_ranked(conn):
+def _last3_game_ids_by_team(conn):
+    """{team_id: [last 3 game ids]} for every team -- the ranking-pool
+    scope used everywhere on the Matchup Scout tab's "Last 3 Games" card,
+    so a team's recent numbers are ranked against everyone else's equally
+    recent numbers, not their season-long ones."""
+    team_ids = [r["id"] for r in conn.execute("SELECT id FROM teams").fetchall()]
+    return {tid: _team_last_n_game_ids(conn, tid, 3) for tid in team_ids}
+
+
+def team_last3_results(team_id):
+    """Record over the last 3 games, plus each game's opponent, score,
+    and result -- the header for the Matchup Scout tab's "Last 3 Games"
+    card."""
+    conn = db.get_conn()
+    try:
+        team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not team_row:
+            return None
+        rows = conn.execute(
+            """SELECT g.id, g.game_date, g.team1_id, g.team2_id, g.team1_score, g.team2_score,
+                      t1.name AS team1_name, t1.logo_url AS team1_logo_url,
+                      t2.name AS team2_name, t2.logo_url AS team2_logo_url
+               FROM games g
+               JOIN teams t1 ON t1.id = g.team1_id
+               JOIN teams t2 ON t2.id = g.team2_id
+               WHERE g.team1_id = ? OR g.team2_id = ?
+               ORDER BY g.game_date DESC, g.id DESC LIMIT 3""",
+            (team_id, team_id),
+        ).fetchall()
+
+        games = []
+        wins = 0
+        for r in rows:
+            is_team1 = r["team1_id"] == team_id
+            team_score = r["team1_score"] if is_team1 else r["team2_score"]
+            opp_score = r["team2_score"] if is_team1 else r["team1_score"]
+            won = team_score > opp_score
+            wins += won
+            games.append({
+                "game_id": r["id"], "game_date": r["game_date"],
+                "opponent": {
+                    "name": r["team2_name"] if is_team1 else r["team1_name"],
+                    "logo_url": r["team2_logo_url"] if is_team1 else r["team1_logo_url"],
+                },
+                "team_score": team_score, "opponent_score": opp_score, "won": won,
+            })
+
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
+            "record": f"{wins}-{len(games) - wins}",
+            "games": games,
+        }
+    finally:
+        conn.close()
+
+
+def _dreb_ranked(conn, game_ids_by_team=None):
     """Defensive rebounds per game, ranked -- pulled directly from
     team_game_stats.dreb since (unlike offensive boards) it isn't split by
     shot type or shot-clock bucket anywhere else in the app."""
+    if game_ids_by_team is not None:
+        out = []
+        for tid, gids in game_ids_by_team.items():
+            if not gids:
+                continue
+            placeholders = ",".join("?" * len(gids))
+            row = conn.execute(
+                f"SELECT SUM(dreb) AS total, COUNT(*) AS gp FROM team_game_stats "
+                f"WHERE team_id = ? AND game_id IN ({placeholders})",
+                (tid, *gids),
+            ).fetchone()
+            if row["gp"]:
+                out.append({"id": tid, "value": round(row["total"] / row["gp"], 1)})
+        return _rank(out, "value", "desc")
+
     rows = conn.execute(
         """SELECT team_id AS id, SUM(dreb) AS total, COUNT(*) AS gp
            FROM team_game_stats GROUP BY team_id"""
@@ -602,18 +673,23 @@ _TOP_ROW_SMALL = [
 ]
 
 
-def team_top_row(team_id):
+def team_top_row(team_id, scope="season"):
     """Backs the Matchup Scout tab's top-line stat strip: team logo +
     record, then a row of headline stats (bigger, blue/red-shaded by
     top-3/bottom-3 league rank) followed by a row of secondary stats
-    (smaller, unshaded) -- rank shown under every number."""
+    (smaller, unshaded) -- rank shown under every number.
+
+    scope: "season" (default) or "last3" -- last3 restricts every team
+    to their own last 3 games for both the value shown AND the ranking
+    pool, so "recent form" is compared like-for-like across the league."""
     conn = db.get_conn()
     try:
-        season_trad = _trad_team_rows(conn)
+        game_ids_by_team = _last3_game_ids_by_team(conn) if scope == "last3" else None
+        season_trad = _trad_team_rows(conn, game_ids_by_team)
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
-        dreb_ranked = _dreb_ranked(conn)
+        dreb_ranked = _dreb_ranked(conn, game_ids_by_team)
 
         def build(key, label, source, direction):
             if source == "trad":
@@ -621,7 +697,7 @@ def team_top_row(team_id):
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r[key] if r else None
             elif source == "clock":
-                ranked = _rank(_clock_rows(conn, "team", key, "overall"), "value", direction)
+                ranked = _rank(_clock_rows(conn, "team", key, "overall", game_ids_by_team), "value", direction)
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r["value"] if r else None
             else:
@@ -650,26 +726,31 @@ def team_top_row(team_id):
 _SHOT_CLOCK_BUCKETS = [("0-8", "0-8s"), ("8-18", "8-18s"), ("18+", "18+s")]
 
 
-def _pts_by_bucket_ranked(conn, bucket, against=False):
+def _pts_by_bucket_ranked(conn, bucket, against=False, game_ids_by_team=None):
     """Points scored (or, if against=True, points ALLOWED -- what the
-    OPPONENT scored) per game within one shot-clock bucket, season-wide,
-    ranked -- pts isn't one of CLOCK_METRICS' single-action stats, so this
-    sums 2pt/3pt/freethrow makes into actual points the same way the
+    OPPONENT scored) per game within one shot-clock bucket, ranked --
+    pts isn't one of CLOCK_METRICS' single-action stats, so this sums
+    2pt/3pt/freethrow makes into actual points the same way the
     5-minute-splits endpoint does for its segment scoring. against=True
     ranks ascending (fewer points allowed = rank 1), same convention as
-    every other "allowed" stat in the app."""
+    every other "allowed" stat in the app. game_ids_by_team scopes both
+    the value and each team's game count (for the per-game average) to
+    just those games -- None means season-wide."""
     if against:
         events = conn.execute(
-            """SELECT g.team1_id AS team1_id, g.team2_id AS team2_id, e.team_id AS actor_id,
+            """SELECT g.id AS game_id, g.team1_id AS team1_id, g.team2_id AS team2_id, e.team_id AS actor_id,
                       e.action_type, e.made, e.shot_clock_used
                FROM pbp_events e JOIN games g ON g.id = e.game_id"""
         ).fetchall()
     else:
         events = conn.execute(
-            "SELECT team_id AS eid, action_type, made, shot_clock_used FROM pbp_events WHERE team_id IS NOT NULL"
+            "SELECT game_id, team_id AS eid, action_type, made, shot_clock_used FROM pbp_events WHERE team_id IS NOT NULL"
         ).fetchall()
     gp_rows = conn.execute("SELECT team_id AS id, COUNT(*) AS gp FROM team_game_stats GROUP BY team_id").fetchall()
     gp_map = {r["id"]: r["gp"] for r in gp_rows}
+    if game_ids_by_team is not None:
+        for tid in gp_map:
+            gp_map[tid] = len(game_ids_by_team.get(tid) or [])
 
     pts_value = {"2pt": 2, "3pt": 3, "freethrow": 1}
     totals = {}
@@ -679,20 +760,26 @@ def _pts_by_bucket_ranked(conn, bucket, against=False):
         if not _in_bucket(e["shot_clock_used"], bucket):
             continue
         eid = (e["team2_id"] if e["actor_id"] == e["team1_id"] else e["team1_id"]) if against else e["eid"]
+        if game_ids_by_team is not None:
+            allowed = game_ids_by_team.get(eid)
+            if not allowed or e["game_id"] not in allowed:
+                continue
         totals[eid] = totals.get(eid, 0) + pts_value[e["action_type"]]
 
     out = [{"id": tid, "value": round(totals.get(tid, 0) / gp, 1)} for tid, gp in gp_map.items() if gp]
     return _rank(out, "value", "asc" if against else "desc")
 
 
-def team_shot_clock_offense(team_id):
+def team_shot_clock_offense(team_id, scope="season"):
     """Offense broken down by shot-clock window (0-8s/8-18s/18+s): points
     per game (plus what share of the team's total scoring that window
     represents), 2PT%, and 3PT% -- each with league rank. Sits just under
-    the top-row stat strip on the Matchup Scout tab."""
+    the top-row stat strip on the Matchup Scout tab. scope: "season" or
+    "last3" (see team_top_row for what that changes)."""
     conn = db.get_conn()
     try:
-        season_trad = _trad_team_rows(conn)
+        game_ids_by_team = _last3_game_ids_by_team(conn) if scope == "last3" else None
+        season_trad = _trad_team_rows(conn, game_ids_by_team)
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
@@ -708,11 +795,11 @@ def team_shot_clock_offense(team_id):
 
         rows = []
         for bucket, label in _SHOT_CLOCK_BUCKETS:
-            pts_ranked = _pts_by_bucket_ranked(conn, bucket)
+            pts_ranked = _pts_by_bucket_ranked(conn, bucket, game_ids_by_team=game_ids_by_team)
             pts_r = next((x for x in pts_ranked if x["id"] == team_id), None)
-            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket), "value", "desc")
+            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket, game_ids_by_team), "value", "desc")
             fg2_r = next((x for x in fg2_ranked if x["id"] == team_id), None)
-            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket), "value", "desc")
+            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket, game_ids_by_team), "value", "desc")
             fg3_r = next((x for x in fg3_ranked if x["id"] == team_id), None)
 
             rows.append({
@@ -731,7 +818,7 @@ def team_shot_clock_offense(team_id):
         conn.close()
 
 
-def team_shot_clock_defense(team_id):
+def team_shot_clock_defense(team_id, scope="season"):
     """Mirrors team_shot_clock_offense for the against side: points
     ALLOWED per game (plus what share of total points allowed that window
     represents), opponent 2PT%/3PT% allowed -- each with league rank
@@ -739,7 +826,8 @@ def team_shot_clock_defense(team_id):
     as every other "allowed" stat in the app)."""
     conn = db.get_conn()
     try:
-        season_trad = _trad_team_rows(conn)
+        game_ids_by_team = _last3_game_ids_by_team(conn) if scope == "last3" else None
+        season_trad = _trad_team_rows(conn, game_ids_by_team)
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
@@ -755,11 +843,11 @@ def team_shot_clock_defense(team_id):
 
         rows = []
         for bucket, label in _SHOT_CLOCK_BUCKETS:
-            pts_ranked = _pts_by_bucket_ranked(conn, bucket, against=True)
+            pts_ranked = _pts_by_bucket_ranked(conn, bucket, against=True, game_ids_by_team=game_ids_by_team)
             pts_r = next((x for x in pts_ranked if x["id"] == team_id), None)
-            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket, against=True), "value", "asc")
+            fg2_ranked = _rank(_clock_rows(conn, "team", "2pt_pct", bucket, game_ids_by_team, against=True), "value", "asc")
             fg2_r = next((x for x in fg2_ranked if x["id"] == team_id), None)
-            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket, against=True), "value", "asc")
+            fg3_ranked = _rank(_clock_rows(conn, "team", "3pt_pct", bucket, game_ids_by_team, against=True), "value", "asc")
             fg3_r = next((x for x in fg3_ranked if x["id"] == team_id), None)
 
             rows.append({
@@ -781,7 +869,7 @@ def team_shot_clock_defense(team_id):
 _OREB_OUTCOME_TYPES = {"2pt", "3pt", "turnover", "foulon"}
 
 
-def _oreb_outcome_breakdown(conn, team_id, source):
+def _oreb_outcome_breakdown(conn, team_id, source, game_ids=None):
     """What happens on the very next possession-relevant event after this
     team grabs an offensive rebound off a missed `source` (2pt or 3pt)
     shot -- classified as their next 2PT attempt, 3PT attempt, turnover,
@@ -789,14 +877,28 @@ def _oreb_outcome_breakdown(conn, team_id, source):
     A second consecutive rebound (missed the putback too) is skipped over
     rather than counted as its own outcome, since it isn't one of the 4
     categories asked for -- the chain keeps resolving to whichever of the
-    4 eventually follows."""
-    rows = conn.execute(
-        """SELECT game_id, action_number, action_type, off_reb_source, made
-           FROM pbp_events
-           WHERE team_id = ? AND action_type IN ('rebound_off', '2pt', '3pt', 'turnover', 'foulon')
-           ORDER BY game_id, action_number""",
-        (team_id,),
-    ).fetchall()
+    4 eventually follows. game_ids restricts to just those games (e.g.
+    the team's last 3) -- None means the whole season."""
+    if game_ids is not None and not game_ids:
+        return None
+    if game_ids is not None:
+        placeholders = ",".join("?" * len(game_ids))
+        rows = conn.execute(
+            f"""SELECT game_id, action_number, action_type, off_reb_source, made
+               FROM pbp_events
+               WHERE team_id = ? AND action_type IN ('rebound_off', '2pt', '3pt', 'turnover', 'foulon')
+               AND game_id IN ({placeholders})
+               ORDER BY game_id, action_number""",
+            (team_id, *game_ids),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT game_id, action_number, action_type, off_reb_source, made
+               FROM pbp_events
+               WHERE team_id = ? AND action_type IN ('rebound_off', '2pt', '3pt', 'turnover', 'foulon')
+               ORDER BY game_id, action_number""",
+            (team_id,),
+        ).fetchall()
 
     by_game = {}
     for e in rows:
@@ -838,7 +940,7 @@ def _oreb_outcome_breakdown(conn, team_id, source):
     }
 
 
-def team_oreb_outcomes(team_id):
+def team_oreb_outcomes(team_id, scope="season"):
     """Backs the Matchup Scout tab's offensive-rebound rundown: after this
     team grabs an offensive rebound off a missed 2PT (or 3PT), what share
     of the time does the very next play end in a 2PT attempt, a 3PT
@@ -848,10 +950,11 @@ def team_oreb_outcomes(team_id):
         team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not team_row:
             return None
+        game_ids = _team_last_n_game_ids(conn, team_id, 3) if scope == "last3" else None
         return {
             "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
-            "off_2pt": _oreb_outcome_breakdown(conn, team_id, "2pt"),
-            "off_3pt": _oreb_outcome_breakdown(conn, team_id, "3pt"),
+            "off_2pt": _oreb_outcome_breakdown(conn, team_id, "2pt", game_ids),
+            "off_3pt": _oreb_outcome_breakdown(conn, team_id, "3pt", game_ids),
         }
     finally:
         conn.close()
