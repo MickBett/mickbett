@@ -1583,30 +1583,65 @@ function muLast3GamesListHtml(resultsData) {
     </table>`;
 }
 
+// Closing "3 scouting takeaways" section -- each headline is backed by a
+// small 2-bar chart (this team's number vs. the league/season comparison
+// point named in compare_label), so the claim has visual evidence
+// alongside the data already spelled out in the text.
+const MU_TAKEAWAY_COLOR = { strength: "#4169e1", weakness: "var(--critical)", trend: "var(--series-2)" };
+const MU_TAKEAWAY_LABEL = { strength: "Strength", weakness: "Weakness", trend: "Recent form" };
+
+function muTakeawayBar(label, value, displayValue, max, color) {
+  const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
+  return `
+    <div class="mu-takeaway-bar-row">
+      <span class="mu-takeaway-bar-label">${label}</span>
+      <div class="mu-takeaway-bar-track"><div class="mu-takeaway-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <span class="mu-takeaway-bar-value">${displayValue}</span>
+    </div>`;
+}
+
+function muTakeawaysHtml(data) {
+  if (!data || !data.takeaways.length) return "";
+  return `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0">Scouting takeaways</h3>
+      <div class="mu-takeaway-grid">
+        ${data.takeaways.map(t => {
+          const dispVal = t.is_pct ? `${t.value}%` : t.value;
+          const dispCmp = t.is_pct ? `${t.compare_value}%` : t.compare_value;
+          const max = Math.max(t.value, t.compare_value) * 1.15 || 1;
+          const color = MU_TAKEAWAY_COLOR[t.kind];
+          return `
+            <div class="mu-takeaway">
+              <div class="mu-takeaway-tag" style="color:${color}">${MU_TAKEAWAY_LABEL[t.kind]}</div>
+              <p class="mu-summary-text">${t.headline}</p>
+              ${muTakeawayBar(t.label, t.value, dispVal, max, color)}
+              ${muTakeawayBar(t.compare_label, t.compare_value, dispCmp, max, "var(--text-muted)")}
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
 async function updateMatchup() {
   const teamId = $("#mu-team").value;
   if (!teamId) return;
   const el = $("#mu-content");
   el.innerHTML = "<p class='muted'>Loading…</p>";
-  const [data, offClock, defClock, orebData, l3Data, l3OffClock, l3DefClock, l3OrebData, l3Results] = await Promise.all([
-    fetch(`/api/teams/${teamId}/top-row`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/shot-clock-offense`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/shot-clock-defense`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/oreb-outcomes`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/top-row?scope=last3`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/shot-clock-offense?scope=last3`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/shot-clock-defense?scope=last3`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/oreb-outcomes?scope=last3`).then(r => r.json()),
-    fetch(`/api/teams/${teamId}/last3-results`).then(r => r.json()),
-  ]);
+  // One bundled request rather than 10 separate ones -- firing that many
+  // concurrently was found to serialize badly server-side (GIL
+  // contention across many CPU-bound passes over the same event data),
+  // ~36s wall time vs ~3s for the same work done sequentially in one call.
+  const page = await (await fetch(`/api/teams/${teamId}/matchup-scout-page`)).json();
 
   el.innerHTML = `
     <div class="card">
-      ${muScoutCardBodyHtml(data, offClock, defClock, orebData)}
+      ${muScoutCardBodyHtml(page.top_row, page.shot_clock_offense, page.shot_clock_defense, page.oreb_outcomes)}
     </div>
     <div class="card" style="margin-top:16px">
-      <h3 style="margin-top:0">Last 3 games — ${l3Results.record}</h3>
-      ${muLast3GamesListHtml(l3Results)}
-      ${muScoutCardBodyHtml(l3Data, l3OffClock, l3DefClock, l3OrebData)}
-    </div>`;
+      <h3 style="margin-top:0">Last 3 games — ${page.last3_results.record}</h3>
+      ${muLast3GamesListHtml(page.last3_results)}
+      ${muScoutCardBodyHtml(page.top_row_last3, page.shot_clock_offense_last3, page.shot_clock_defense_last3, page.oreb_outcomes_last3)}
+    </div>
+    ${muTakeawaysHtml(page.takeaways)}`;
 }

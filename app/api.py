@@ -251,6 +251,27 @@ def team_last3_results(team_id: int):
     return data
 
 
+@router.get("/teams/{team_id}/scout-takeaways")
+def team_scout_takeaways(team_id: int):
+    """3 data-backed scouting takeaways (a strength, a weakness, and a
+    recent-form swing) -- closing section of the Matchup Scout tab."""
+    data = rankings.team_scout_takeaways(team_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
+@router.get("/teams/{team_id}/matchup-scout-page")
+def matchup_scout_page(team_id: int):
+    """Everything the Matchup Scout tab needs, bundled into one request --
+    see rankings.matchup_scout_page for why this replaced 10 separate
+    concurrent calls (a real perf bug: they serialized badly under load)."""
+    data = rankings.matchup_scout_page(team_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return data
+
+
 @router.get("/matchup-scout")
 def matchup_scout(team_id: int, opponent_id: int):
     """How `opponent_id` might beat `team_id`, plus a verdict on whether

@@ -960,6 +960,145 @@ def team_oreb_outcomes(team_id, scope="season"):
         conn.close()
 
 
+def _all_tile_stats(conn, team_id, game_ids_by_team=None):
+    """All 12 top-row stats for one team, each with value/rank/pool AND
+    the league average -- the shared lookup behind team_scout_takeaways'
+    strength/weakness/trend picks (and the average is what the frontend
+    draws as the second bar in each takeaway's mini comparison chart)."""
+    season_trad = _trad_team_rows(conn, game_ids_by_team)
+    team_row = next((r for r in season_trad if r["id"] == team_id), None)
+    if not team_row:
+        return None
+    dreb_ranked = _dreb_ranked(conn, game_ids_by_team)
+
+    out = {}
+    for key, label, source, direction in _TOP_ROW_BIG + _TOP_ROW_SMALL:
+        if source == "trad":
+            ranked = _rank(season_trad, key, direction)
+            values = [x[key] for x in ranked]
+        elif source == "clock":
+            ranked = _rank(_clock_rows(conn, "team", key, "overall", game_ids_by_team), "value", direction)
+            values = [x["value"] for x in ranked]
+        else:
+            ranked = dreb_ranked
+            values = [x["value"] for x in ranked]
+        r = next((x for x in ranked if x["id"] == team_id), None)
+        if not r:
+            continue
+        val = r[key] if source == "trad" else r["value"]
+        out[key] = {
+            "key": key, "label": label, "value": val, "rank": r["rank"], "pool": len(ranked),
+            "avg": round(sum(values) / len(values), 1) if values else None,
+            "is_pct": label.endswith("%"),
+        }
+    return out
+
+
+def team_scout_takeaways(team_id):
+    """3 data-backed scouting takeaways for team_id -- a season-long
+    strength, a season-long weakness, and whichever stat has swung the
+    most (better or worse) between the season and the last 3 games.
+    Each carries value/rank/comparison-value so the frontend can draw a
+    small bar-chart alongside the headline text."""
+    conn = db.get_conn()
+    try:
+        team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not team_row:
+            return None
+        season_stats = _all_tile_stats(conn, team_id)
+        if not season_stats:
+            return None
+        last3_stats = _all_tile_stats(conn, team_id, _last3_game_ids_by_team(conn))
+
+        name = team_row["name"]
+        seed = team_id * 23
+
+        def fmt(stat):
+            return f"{stat['value']}%" if stat["is_pct"] else stat["value"]
+
+        takeaways = []
+
+        best_key = min(season_stats, key=lambda k: season_stats[k]["rank"])
+        b = season_stats[best_key]
+        takeaways.append({
+            "kind": "strength",
+            "headline": _pick([
+                f"{possessive(name)} clearest strength is {b['label']} -- #{b['rank']} of {b['pool']} in the league "
+                f"({fmt(b)}, vs a league average of {b['avg']}{'%' if b['is_pct'] else ''}).",
+                f"{possessive(name)} standout number is {b['label']}: #{b['rank']} of {b['pool']} at {fmt(b)}, "
+                f"well clear of the {b['avg']}{'%' if b['is_pct'] else ''} league average.",
+            ], seed),
+            "label": b["label"], "value": b["value"], "rank": b["rank"], "pool": b["pool"], "is_pct": b["is_pct"],
+            "compare_value": b["avg"], "compare_label": "League avg",
+        })
+
+        worst_key = max(season_stats, key=lambda k: season_stats[k]["rank"])
+        w = season_stats[worst_key]
+        takeaways.append({
+            "kind": "weakness",
+            "headline": _pick([
+                f"Their biggest vulnerability is {w['label']} -- #{w['rank']} of {w['pool']} ({fmt(w)}), "
+                f"well off the {w['avg']}{'%' if w['is_pct'] else ''} league average.",
+                f"{name} are exploitable in {w['label']}: #{w['rank']} of {w['pool']} at {fmt(w)}, "
+                f"against a {w['avg']}{'%' if w['is_pct'] else ''} league average.",
+            ], seed + 7),
+            "label": w["label"], "value": w["value"], "rank": w["rank"], "pool": w["pool"], "is_pct": w["is_pct"],
+            "compare_value": w["avg"], "compare_label": "League avg",
+        })
+
+        if last3_stats:
+            common = [k for k in season_stats if k in last3_stats]
+            swing_key = max(common, key=lambda k: abs(last3_stats[k]["rank"] - season_stats[k]["rank"]))
+            s, l3 = season_stats[swing_key], last3_stats[swing_key]
+            swing = l3["rank"] - s["rank"]
+            direction = "improved" if swing < 0 else ("dipped" if swing > 0 else "held steady")
+            takeaways.append({
+                "kind": "trend",
+                "headline": _pick([
+                    f"Form has {direction} in {s['label']} recently: #{s['rank']} of {s['pool']} on the "
+                    f"season ({fmt(s)}) but #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}).",
+                    f"Watch {s['label']} -- {name} have {direction} there lately, from #{s['rank']} of "
+                    f"{s['pool']} ({fmt(s)}) on the season to #{l3['rank']} of {l3['pool']} ({fmt(l3)}) in the last 3.",
+                ], seed + 13),
+                "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
+                "compare_value": s["value"], "compare_label": "Season avg",
+            })
+
+        return {
+            "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
+            "takeaways": takeaways,
+        }
+    finally:
+        conn.close()
+
+
+def matchup_scout_page(team_id):
+    """Bundles every Matchup Scout tab section into one call. This used to
+    be 10 separate frontend fetches; profiling found that firing them
+    concurrently serialized badly under GIL contention (10 parallel
+    requests took ~36s wall time vs ~3s running the same work one at a
+    time sequentially -- confirmed raw SQLite concurrency itself was fine
+    in isolation, so the cost was many CPU-bound Python passes over the
+    same event data competing for the GIL at once, not the database).
+    One sequential request removes that contention entirely and ends up
+    faster for the user despite doing the same total work."""
+    top_row = team_top_row(team_id)
+    if not top_row:
+        return None
+    return {
+        "top_row": top_row,
+        "top_row_last3": team_top_row(team_id, "last3"),
+        "shot_clock_offense": team_shot_clock_offense(team_id),
+        "shot_clock_offense_last3": team_shot_clock_offense(team_id, "last3"),
+        "shot_clock_defense": team_shot_clock_defense(team_id),
+        "shot_clock_defense_last3": team_shot_clock_defense(team_id, "last3"),
+        "oreb_outcomes": team_oreb_outcomes(team_id),
+        "oreb_outcomes_last3": team_oreb_outcomes(team_id, "last3"),
+        "last3_results": team_last3_results(team_id),
+        "takeaways": team_scout_takeaways(team_id),
+    }
+
+
 # ------------------------------------------------------ matchup scout (v1) -
 # Superseded by team_season_table() above -- the Matchup Scout tab was
 # rebuilt into a plain season-stats column table. Left in place (currently
