@@ -602,7 +602,7 @@ body.modal-open { overflow: hidden; }
 .mu-shotclock-rank.tier-bottom { color: var(--critical); }
 .mu-oreb-pct { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
 
-.mu-takeaway-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.mu-takeaway-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
 @media (max-width: 900px) {
   .mu-takeaway-grid { grid-template-columns: 1fr; }
 }
@@ -620,6 +620,18 @@ body.modal-open { overflow: hidden; }
 .mu-takeaway-bar-track { flex: 1; height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
 .mu-takeaway-bar-fill { height: 100%; border-radius: 4px; }
 .mu-takeaway-bar-value { flex: none; width: 50px; text-align: right; font-weight: 700; }
+
+.mu-strength-subhead {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 16px 0 8px;
+}
+.mu-strength-subhead:first-of-type { margin-top: 0; }
+.mu-strength-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mu-strength-item { padding: 10px 12px; background: var(--surface-1); border-radius: 8px; }
 
 .mu-key {
   display: flex;

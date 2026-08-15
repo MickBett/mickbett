@@ -994,12 +994,20 @@ def _all_tile_stats(conn, team_id, game_ids_by_team=None):
     return out
 
 
+def _stat_bullet(stat, pool_word="league"):
+    unit = "%" if stat["is_pct"] else ""
+    return f"#{stat['rank']} of {stat['pool']} in the {pool_word} ({stat['value']}{unit})"
+
+
 def team_scout_takeaways(team_id):
-    """3 data-backed scouting takeaways for team_id -- a season-long
-    strength, a season-long weakness, and whichever stat has swung the
-    most (better or worse) between the season and the last 3 games.
-    Each carries value/rank/comparison-value so the frontend can draw a
-    small bar-chart alongside the headline text."""
+    """Data-backed scouting takeaways for team_id: every season stat
+    ranked top-3 in the league (a "strength"), each paired with how that
+    same stat looks over the last 3 games; any stat that's ranked top-3
+    over just the last 3 games WITHOUT being a season-long strength (an
+    "emerging" strength); plus a single season-long weakness and the
+    biggest last3-vs-season rank swing, same as before. Every entry
+    carries value/rank/comparison-value so the frontend can draw a small
+    bar-chart alongside the text."""
     conn = db.get_conn()
     try:
         team_row = conn.execute("SELECT id, name, logo_url FROM teams WHERE id = ?", (team_id,)).fetchone()
@@ -1016,21 +1024,40 @@ def team_scout_takeaways(team_id):
         def fmt(stat):
             return f"{stat['value']}%" if stat["is_pct"] else stat["value"]
 
-        takeaways = []
+        # --- strengths: every season top-3, each paired with its last-3
+        # read, plus any stat that's ONLY a top-3 over the last 3 games. ---
+        season_strengths = []
+        emerging_strengths = []
+        for key, s in season_stats.items():
+            l3 = last3_stats.get(key) if last3_stats else None
+            if s["rank"] <= 3:
+                entry = {
+                    "label": s["label"], "value": s["value"], "rank": s["rank"], "pool": s["pool"], "is_pct": s["is_pct"],
+                    "compare_label": "League avg", "compare_value": s["avg"],
+                }
+                if l3:
+                    trend = "holding up" if l3["rank"] <= 3 else ("cooled to the middle of the pack" if l3["rank"] <= 7 else "fallen off")
+                    entry["text"] = (
+                        f"{s['label']} -- {_stat_bullet(s)} this season, {trend} over the last 3 "
+                        f"(#{l3['rank']} of {l3['pool']}, {fmt(l3)})."
+                    )
+                    entry["last3_value"], entry["last3_rank"], entry["last3_pool"] = l3["value"], l3["rank"], l3["pool"]
+                else:
+                    entry["text"] = f"{s['label']} -- {_stat_bullet(s)} this season ({fmt(s)})."
+                season_strengths.append(entry)
+            if l3 and l3["rank"] <= 3 and s["rank"] > 3:
+                emerging_strengths.append({
+                    "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
+                    "compare_label": "Season", "compare_value": s["value"],
+                    "text": (
+                        f"{s['label']} -- #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}), not a "
+                        f"season-long strength (#{s['rank']} of {s['pool']}, {fmt(s)})."
+                    ),
+                })
+        season_strengths.sort(key=lambda e: e["rank"])
+        emerging_strengths.sort(key=lambda e: e["rank"])
 
-        best_key = min(season_stats, key=lambda k: season_stats[k]["rank"])
-        b = season_stats[best_key]
-        takeaways.append({
-            "kind": "strength",
-            "headline": _pick([
-                f"{possessive(name)} clearest strength is {b['label']} -- #{b['rank']} of {b['pool']} in the league "
-                f"({fmt(b)}, vs a league average of {b['avg']}{'%' if b['is_pct'] else ''}).",
-                f"{possessive(name)} standout number is {b['label']}: #{b['rank']} of {b['pool']} at {fmt(b)}, "
-                f"well clear of the {b['avg']}{'%' if b['is_pct'] else ''} league average.",
-            ], seed),
-            "label": b["label"], "value": b["value"], "rank": b["rank"], "pool": b["pool"], "is_pct": b["is_pct"],
-            "compare_value": b["avg"], "compare_label": "League avg",
-        })
+        takeaways = []
 
         worst_key = max(season_stats, key=lambda k: season_stats[k]["rank"])
         w = season_stats[worst_key]
@@ -1066,6 +1093,8 @@ def team_scout_takeaways(team_id):
 
         return {
             "team": {"id": team_row["id"], "name": team_row["name"], "logo_url": team_row["logo_url"]},
+            "season_strengths": season_strengths,
+            "emerging_strengths": emerging_strengths,
             "takeaways": takeaways,
         }
     finally:
