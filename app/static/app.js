@@ -1780,36 +1780,26 @@ async function muCapturePanel(panelId) {
   });
 }
 
-// Adds one canvas to the PDF, full-width on the page; if it's taller than
-// one page it spills onto as many extra pages as it needs rather than
-// getting squashed or cropped.
-function muAddCanvasToPdf(doc, canvas, margin) {
+// One canvas per PDF page, titled and scaled DOWN OR UP to fit entirely
+// within the page (never spilling onto extra pages, never cropped) --
+// whichever of width/height is the tighter constraint wins, and the
+// result is centered horizontally below the title.
+function muAddCanvasToPdfPage(doc, canvas, margin, title) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const imgW = pageW - margin * 2;
-  const imgH = (canvas.height / canvas.width) * imgW;
-  const pageContentH = pageH - margin * 2;
 
-  if (imgH <= pageContentH) {
-    doc.addImage(canvas.toDataURL("image/png"), "PNG", margin, margin, imgW, imgH);
-    return;
-  }
-  const pxPerPt = canvas.width / imgW;
-  let renderedH = 0, first = true;
-  while (renderedH < imgH) {
-    if (!first) doc.addPage();
-    first = false;
-    const sliceH = Math.min(pageContentH, imgH - renderedH);
-    const slice = document.createElement("canvas");
-    slice.width = canvas.width;
-    slice.height = Math.round(sliceH * pxPerPt);
-    slice.getContext("2d").drawImage(
-      canvas, 0, Math.round(renderedH * pxPerPt), canvas.width, slice.height,
-      0, 0, canvas.width, slice.height,
-    );
-    doc.addImage(slice.toDataURL("image/png"), "PNG", margin, margin, imgW, sliceH);
-    renderedH += sliceH;
-  }
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(15);
+  doc.text(title, margin, margin + 12);
+  const top = margin + 26;
+
+  const availW = pageW - margin * 2;
+  const availH = pageH - top - margin;
+  const scale = Math.min(availW / canvas.width, availH / canvas.height);
+  const imgW = canvas.width * scale;
+  const imgH = canvas.height * scale;
+  const x = margin + (availW - imgW) / 2;
+  doc.addImage(canvas.toDataURL("image/png"), "PNG", x, top, imgW, imgH);
 }
 
 async function exportMatchupPdf() {
@@ -1837,20 +1827,34 @@ async function exportMatchupPdf() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
     const margin = 24;
-    const pages = [
-      { tab: "matchup", panel: "tab-matchup", refresh: updateMatchup, label: "Matchup Scout" },
-      { tab: "fivemin", panel: "tab-fivemin", refresh: updateFiveMin, label: "5 Minute Splits" },
-      { tab: "shotcharts", panel: "tab-shotcharts", refresh: updateShotChart, label: "Shot Charts" },
+    const t = check.teamName;
+    // 5 pages, one section each, one tab-switch+refresh per group (the
+    // 2 sub-captures within a group share the same render pass).
+    const groups = [
+      { tab: "matchup", refresh: updateMatchup, captures: [
+          { panel: "mu-content", title: `${t} — Matchup Scout` },
+      ] },
+      { tab: "fivemin", refresh: updateFiveMin, captures: [
+          { panel: "fm-offense-block", title: `${t} — 5 Minute Offence` },
+          { panel: "fm-defense-block", title: `${t} — 5 Minute Defence` },
+      ] },
+      { tab: "shotcharts", refresh: updateShotChart, captures: [
+          { panel: "sc-offense-block", title: `${t} — Shot Chart Offence` },
+          { panel: "sc-defense-section", title: `${t} — Shot Chart Defence` },
+      ] },
     ];
 
-    for (let i = 0; i < pages.length; i++) {
-      const { tab, panel, refresh, label } = pages[i];
-      btn.textContent = `Building PDF… (${label})`;
-      showPanel(tab);
-      await refresh();
-      const canvas = await muCapturePanel(panel);
-      if (i > 0) doc.addPage();
-      muAddCanvasToPdf(doc, canvas, margin);
+    let pageCount = 0;
+    for (const group of groups) {
+      showPanel(group.tab);
+      await group.refresh();
+      for (const { panel, title } of group.captures) {
+        btn.textContent = `Building PDF… (${title})`;
+        const canvas = await muCapturePanel(panel);
+        if (pageCount > 0) doc.addPage();
+        muAddCanvasToPdfPage(doc, canvas, margin, title);
+        pageCount++;
+      }
     }
 
     const stamp = new Date().toISOString().slice(0, 10);

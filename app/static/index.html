@@ -157,25 +157,29 @@
         <select id="sc-select"></select>
       </span>
     </div>
-    <div id="sc-profile"></div>
+    <!-- sc-offense-block / sc-defense-section (below) are what the Matchup
+         Scout "Export PDF" button captures as 2 separate PDF pages. -->
+    <div id="sc-offense-block">
+      <div id="sc-profile"></div>
 
-    <div class="shotchart-grid">
-      <div class="chart-col">
-        <div class="card">
-          <img id="sc-image" class="chart-img" alt="Shot chart" />
+      <div class="shotchart-grid">
+        <div class="chart-col">
+          <div class="card">
+            <img id="sc-image" class="chart-img" alt="Shot chart" />
+          </div>
+          <div class="card">
+            <h3>Shot-clock breakdown <span class="hint" title="Approximate — derived from the game clock and the last possession-changing event (rebound, turnover, made basket, or period start), since the feed has no explicit shot-clock field. Buckets are seconds elapsed since the shot clock was last reset (0-8 = early clock, 18+ = late clock).">ⓘ</span></h3>
+            <div id="sc-clock-table"></div>
+          </div>
         </div>
-        <div class="card">
-          <h3>Shot-clock breakdown <span class="hint" title="Approximate — derived from the game clock and the last possession-changing event (rebound, turnover, made basket, or period start), since the feed has no explicit shot-clock field. Buckets are seconds elapsed since the shot clock was last reset (0-8 = early clock, 18+ = late clock).">ⓘ</span></h3>
-          <div id="sc-clock-table"></div>
-        </div>
-      </div>
-      <div class="chart-col">
-        <div class="card">
-          <img id="zone-image" class="chart-img" alt="Zone map" />
-        </div>
-        <div class="card">
-          <h3>Zone breakdown <span class="hint" title="10 regions — 2PT split by distance (Paint, Short Corner L/R, Mid-Range L/R) and 3PT split by angle (Corner, Wing, Top, Wing, Corner).">ⓘ</span></h3>
-          <div id="zone-table"></div>
+        <div class="chart-col">
+          <div class="card">
+            <img id="zone-image" class="chart-img" alt="Zone map" />
+          </div>
+          <div class="card">
+            <h3>Zone breakdown <span class="hint" title="10 regions — 2PT split by distance (Paint, Short Corner L/R, Mid-Range L/R) and 3PT split by angle (Corner, Wing, Top, Wing, Corner).">ⓘ</span></h3>
+            <div id="zone-table"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -224,39 +228,45 @@
         <option value="last5">Last 5 Games</option>
       </select>
     </div>
-    <div class="card fm-read-card">
-      <h3>Segment-by-segment read <span class="hint" title="Each cell's league rank for that segment, out of 10 teams: below 4 = Strong, 4-7 = Middle of the road, 8-10 = Weak. Turnovers and fouls are already ranked fewer-is-better, so 'Strong' there means committing the fewest. Avg Rank (first column) is the segment's own average across all 6 tracked stats, tiered the same way -- e.g. 3.5 still counts as Strong.">ⓘ</span></h3>
-      <div id="fm-read-table"></div>
-    </div>
-    <div class="fivemin-grid">
-      <div class="card"><h3>Points<span class="fm-avgrank-badge" id="fm-pts-avgrank"></span></h3><canvas id="fm-pts"></canvas></div>
-      <div class="card"><h3>2PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg2-avgrank"></span></h3><canvas id="fm-fg2"></canvas></div>
-      <div class="card"><h3>3PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg3-avgrank"></span></h3><canvas id="fm-fg3"></canvas></div>
-      <div class="card"><h3>Free Throws Attempted <span class="hint" title="Bar height is TOTAL FREE THROWS ATTEMPTED (not %), and it's ranked by that same volume -- getting to the line more is a better sign of how a team is playing in that stretch than FT% off a small sample. FT% still shown in small text for reference.">ⓘ</span><span class="fm-avgrank-badge" id="fm-ft-avgrank"></span></h3><canvas id="fm-ft"></canvas></div>
-      <div class="card"><h3>Offensive Rebounds<span class="fm-avgrank-badge" id="fm-oreb-avgrank"></span></h3><canvas id="fm-oreb"></canvas></div>
-      <div class="card"><h3>Defensive Rebounds<span class="fm-avgrank-badge" id="fm-dreb-avgrank"></span></h3><canvas id="fm-dreb"></canvas></div>
-      <div class="card"><h3>Fouls Committed<span class="fm-avgrank-badge" id="fm-fouls-avgrank"></span></h3><canvas id="fm-fouls"></canvas></div>
-      <div class="card"><h3>Fouled (Drawn)<span class="fm-avgrank-badge" id="fm-fouled-avgrank"></span></h3><canvas id="fm-fouled"></canvas></div>
-      <div class="card"><h3>Turnovers<span class="fm-avgrank-badge" id="fm-tov-avgrank"></span></h3><canvas id="fm-tov"></canvas></div>
-      <div class="card"><h3>Steals<span class="fm-avgrank-badge" id="fm-stl-avgrank"></span></h3><canvas id="fm-stl"></canvas></div>
+    <!-- fm-offense-block / fm-defense-block are what the Matchup Scout
+         "Export PDF" button captures as 2 separate PDF pages. -->
+    <div id="fm-offense-block">
+      <div class="card fm-read-card">
+        <h3>Segment-by-segment read <span class="hint" title="Each cell's league rank for that segment, out of 10 teams: below 4 = Strong, 4-7 = Middle of the road, 8-10 = Weak. Turnovers and fouls are already ranked fewer-is-better, so 'Strong' there means committing the fewest. Avg Rank (first column) is the segment's own average across all 6 tracked stats, tiered the same way -- e.g. 3.5 still counts as Strong.">ⓘ</span></h3>
+        <div id="fm-read-table"></div>
+      </div>
+      <div class="fivemin-grid">
+        <div class="card"><h3>Points<span class="fm-avgrank-badge" id="fm-pts-avgrank"></span></h3><canvas id="fm-pts"></canvas></div>
+        <div class="card"><h3>2PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg2-avgrank"></span></h3><canvas id="fm-fg2"></canvas></div>
+        <div class="card"><h3>3PT % <span class="hint" title="Bar height is shooting % (not attempts). Ranked by shooting %. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg3-avgrank"></span></h3><canvas id="fm-fg3"></canvas></div>
+        <div class="card"><h3>Free Throws Attempted <span class="hint" title="Bar height is TOTAL FREE THROWS ATTEMPTED (not %), and it's ranked by that same volume -- getting to the line more is a better sign of how a team is playing in that stretch than FT% off a small sample. FT% still shown in small text for reference.">ⓘ</span><span class="fm-avgrank-badge" id="fm-ft-avgrank"></span></h3><canvas id="fm-ft"></canvas></div>
+        <div class="card"><h3>Offensive Rebounds<span class="fm-avgrank-badge" id="fm-oreb-avgrank"></span></h3><canvas id="fm-oreb"></canvas></div>
+        <div class="card"><h3>Defensive Rebounds<span class="fm-avgrank-badge" id="fm-dreb-avgrank"></span></h3><canvas id="fm-dreb"></canvas></div>
+        <div class="card"><h3>Fouls Committed<span class="fm-avgrank-badge" id="fm-fouls-avgrank"></span></h3><canvas id="fm-fouls"></canvas></div>
+        <div class="card"><h3>Fouled (Drawn)<span class="fm-avgrank-badge" id="fm-fouled-avgrank"></span></h3><canvas id="fm-fouled"></canvas></div>
+        <div class="card"><h3>Turnovers<span class="fm-avgrank-badge" id="fm-tov-avgrank"></span></h3><canvas id="fm-tov"></canvas></div>
+        <div class="card"><h3>Steals<span class="fm-avgrank-badge" id="fm-stl-avgrank"></span></h3><canvas id="fm-stl"></canvas></div>
+      </div>
     </div>
 
-    <h3 class="section-divider">Defense — opponent stats <span class="hint" title="Same 8 five-minute segments, but for what this team's OPPONENTS did against them in games they played. Colouring flips direction where fewer is better for the defense (e.g. points/rebounds/steals allowed, fouls committed against opponents), and stays higher-is-better where forcing more is good (opponent fouls, opponent turnovers).">ⓘ</span></h3>
-    <div class="card fm-read-card">
-      <h3>Segment-by-segment read — opponent <span class="hint" title="Each cell's league rank for that segment, out of 10 teams, for what the OPPONENT did against this team: below 4 = Strong defense, 4-7 = Middle of the road, 8-10 = Weak. Points/shooting/rebounds allowed are ranked fewer/lower-is-better, so 'Strong' means holding the opponent down. Avg Rank (2nd column) is the segment's own average across all 6 tracked stats, tiered the same way -- e.g. 3.5 still counts as Strong.">ⓘ</span></h3>
-      <div id="fm-read-table-def"></div>
-    </div>
-    <div class="fivemin-grid">
-      <div class="card"><h3>Points Allowed<span class="fm-avgrank-badge" id="fm-pts-def-avgrank"></span></h3><canvas id="fm-pts-def"></canvas></div>
-      <div class="card"><h3>Opponent 2PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg2-def-avgrank"></span></h3><canvas id="fm-fg2-def"></canvas></div>
-      <div class="card"><h3>Opponent 3PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg3-def-avgrank"></span></h3><canvas id="fm-fg3-def"></canvas></div>
-      <div class="card"><h3>Opponent Free Throws Attempted <span class="hint" title="Bar height is TOTAL opponent free throws attempted against this team, ranked by that volume -- fewer trips to the line allowed is better defense. Opponent FT% still shown in small text for reference.">ⓘ</span><span class="fm-avgrank-badge" id="fm-ft-def-avgrank"></span></h3><canvas id="fm-ft-def"></canvas></div>
-      <div class="card"><h3>Opponent Offensive Rebounds<span class="fm-avgrank-badge" id="fm-oreb-def-avgrank"></span></h3><canvas id="fm-oreb-def"></canvas></div>
-      <div class="card"><h3>Opponent Defensive Rebounds<span class="fm-avgrank-badge" id="fm-dreb-def-avgrank"></span></h3><canvas id="fm-dreb-def"></canvas></div>
-      <div class="card"><h3>Opponent Fouls Committed <span class="hint" title="Fouls the OPPONENT committed against this team -- more is better for this team (more trips to the free-throw line).">ⓘ</span><span class="fm-avgrank-badge" id="fm-fouls-def-avgrank"></span></h3><canvas id="fm-fouls-def"></canvas></div>
-      <div class="card"><h3>Fouls on Opponent<span class="fm-avgrank-badge" id="fm-fouled-def-avgrank"></span></h3><canvas id="fm-fouled-def"></canvas></div>
-      <div class="card"><h3>Opponent Turnovers Forced<span class="fm-avgrank-badge" id="fm-tov-def-avgrank"></span></h3><canvas id="fm-tov-def"></canvas></div>
-      <div class="card"><h3>Opponent Steals<span class="fm-avgrank-badge" id="fm-stl-def-avgrank"></span></h3><canvas id="fm-stl-def"></canvas></div>
+    <div id="fm-defense-block">
+      <h3 class="section-divider">Defense — opponent stats <span class="hint" title="Same 8 five-minute segments, but for what this team's OPPONENTS did against them in games they played. Colouring flips direction where fewer is better for the defense (e.g. points/rebounds/steals allowed, fouls committed against opponents), and stays higher-is-better where forcing more is good (opponent fouls, opponent turnovers).">ⓘ</span></h3>
+      <div class="card fm-read-card">
+        <h3>Segment-by-segment read — opponent <span class="hint" title="Each cell's league rank for that segment, out of 10 teams, for what the OPPONENT did against this team: below 4 = Strong defense, 4-7 = Middle of the road, 8-10 = Weak. Points/shooting/rebounds allowed are ranked fewer/lower-is-better, so 'Strong' means holding the opponent down. Avg Rank (2nd column) is the segment's own average across all 6 tracked stats, tiered the same way -- e.g. 3.5 still counts as Strong.">ⓘ</span></h3>
+        <div id="fm-read-table-def"></div>
+      </div>
+      <div class="fivemin-grid">
+        <div class="card"><h3>Points Allowed<span class="fm-avgrank-badge" id="fm-pts-def-avgrank"></span></h3><canvas id="fm-pts-def"></canvas></div>
+        <div class="card"><h3>Opponent 2PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg2-def-avgrank"></span></h3><canvas id="fm-fg2-def"></canvas></div>
+        <div class="card"><h3>Opponent 3PT % <span class="hint" title="Bar height is opponent shooting % against this team. Ranked by %, lower is better defense. Both the % on the bar and its x-axis label share the same league-wide rank for that segment.">ⓘ</span><span class="fm-avgrank-badge" id="fm-fg3-def-avgrank"></span></h3><canvas id="fm-fg3-def"></canvas></div>
+        <div class="card"><h3>Opponent Free Throws Attempted <span class="hint" title="Bar height is TOTAL opponent free throws attempted against this team, ranked by that volume -- fewer trips to the line allowed is better defense. Opponent FT% still shown in small text for reference.">ⓘ</span><span class="fm-avgrank-badge" id="fm-ft-def-avgrank"></span></h3><canvas id="fm-ft-def"></canvas></div>
+        <div class="card"><h3>Opponent Offensive Rebounds<span class="fm-avgrank-badge" id="fm-oreb-def-avgrank"></span></h3><canvas id="fm-oreb-def"></canvas></div>
+        <div class="card"><h3>Opponent Defensive Rebounds<span class="fm-avgrank-badge" id="fm-dreb-def-avgrank"></span></h3><canvas id="fm-dreb-def"></canvas></div>
+        <div class="card"><h3>Opponent Fouls Committed <span class="hint" title="Fouls the OPPONENT committed against this team -- more is better for this team (more trips to the free-throw line).">ⓘ</span><span class="fm-avgrank-badge" id="fm-fouls-def-avgrank"></span></h3><canvas id="fm-fouls-def"></canvas></div>
+        <div class="card"><h3>Fouls on Opponent<span class="fm-avgrank-badge" id="fm-fouled-def-avgrank"></span></h3><canvas id="fm-fouled-def"></canvas></div>
+        <div class="card"><h3>Opponent Turnovers Forced<span class="fm-avgrank-badge" id="fm-tov-def-avgrank"></span></h3><canvas id="fm-tov-def"></canvas></div>
+        <div class="card"><h3>Opponent Steals<span class="fm-avgrank-badge" id="fm-stl-def-avgrank"></span></h3><canvas id="fm-stl-def"></canvas></div>
+      </div>
     </div>
   </section>
 
