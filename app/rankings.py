@@ -626,45 +626,48 @@ def team_last3_results(team_id):
         conn.close()
 
 
-def _reb_col_ranked(conn, column, game_ids_by_team=None):
-    """Total rebounds per game for `column` ("oreb" or "dreb"), ranked --
-    pulled directly from team_game_stats since this is the combined
-    (not split by shot type/shot-clock bucket) number. `column` is always
-    one of our own two hardcoded literals, never external input."""
-    if game_ids_by_team is not None:
-        out = []
-        for tid, gids in game_ids_by_team.items():
-            if not gids:
-                continue
-            placeholders = ",".join("?" * len(gids))
-            row = conn.execute(
-                f"SELECT SUM({column}) AS total, COUNT(*) AS gp FROM team_game_stats "
-                f"WHERE team_id = ? AND game_id IN ({placeholders})",
-                (tid, *gids),
-            ).fetchone()
-            if row["gp"]:
-                out.append({"id": tid, "value": round(row["total"] / row["gp"], 1)})
-        return _rank(out, "value", "desc")
-
-    rows = conn.execute(
-        f"""SELECT team_id AS id, SUM({column}) AS total, COUNT(*) AS gp
-           FROM team_game_stats GROUP BY team_id"""
+def _oreb_efficiency_ranked(conn, game_ids_by_team=None):
+    """Offensive rebound efficiency: total offensive rebounds off a
+    missed 2PT or 3PT, divided by the team's own total missed 2PT+3PT
+    shots, as a % -- how much of their own misses they recover. Ranked
+    desc (higher = better). Both counts are season (or last-3, if
+    scoped) totals, not per-game rates -- the ratio is what matters."""
+    events = conn.execute(
+        """SELECT team_id AS eid, game_id, action_type, made, off_reb_source
+           FROM pbp_events
+           WHERE team_id IS NOT NULL AND action_type IN ('2pt', '3pt', 'rebound_off')"""
     ).fetchall()
-    out = [{"id": r["id"], "value": round(r["total"] / r["gp"], 1)} for r in rows if r["gp"]]
+    misses, orebs = {}, {}
+    for e in events:
+        if game_ids_by_team is not None:
+            allowed = game_ids_by_team.get(e["eid"])
+            if not allowed or e["game_id"] not in allowed:
+                continue
+        if e["action_type"] in ("2pt", "3pt") and not e["made"]:
+            misses[e["eid"]] = misses.get(e["eid"], 0) + 1
+        elif e["action_type"] == "rebound_off" and e["off_reb_source"] in ("2pt", "3pt"):
+            orebs[e["eid"]] = orebs.get(e["eid"], 0) + 1
+
+    team_ids = [r["id"] for r in conn.execute("SELECT id FROM teams").fetchall()]
+    out = [
+        {"id": tid, "value": round(orebs.get(tid, 0) / misses[tid] * 100, 1)}
+        for tid in team_ids if misses.get(tid)
+    ]
     return _rank(out, "value", "desc")
 
 
 # (key, label, source, direction) -- source: "trad" (TRAD_TEAM_METRICS-style
-# per-game average), "clock" (season-wide clock:*:overall stat), or "oreb"
-# (combined offensive rebounds, not split by shot type -- that split lives
-# in the "Result of an offensive rebound" table instead). Defensive
-# rebounds aren't tracked here at all -- not useful for this tab.
+# per-game average), "clock" (season-wide clock:*:overall stat), or
+# "oreb_eff" (offensive rebound efficiency, see _oreb_efficiency_ranked).
+# Defensive rebounds aren't tracked here at all -- not useful for this tab.
 _TOP_ROW_BIG = [
     ("ppg", "PPG", "trad", "desc"),
     ("papg", "PAPG", "trad", "asc"),
     ("2pt_pct", "2PT%", "clock", "desc"),
     ("3pt_pct", "3PT%", "clock", "desc"),
-    ("oreb", "OREB", "oreb", "desc"),
+    ("oreb_2pt", "OREB (2PT)", "clock", "desc"),
+    ("oreb_3pt", "OREB (3PT)", "clock", "desc"),
+    ("oreb_eff", "OREB%", "oreb_eff", "desc"),
 ]
 _TOP_ROW_SMALL = [
     ("apg", "AST", "trad", "desc"),
@@ -691,7 +694,7 @@ def team_top_row(team_id, scope="season"):
         team_row = next((r for r in season_trad if r["id"] == team_id), None)
         if not team_row:
             return None
-        oreb_ranked = _reb_col_ranked(conn, "oreb", game_ids_by_team)
+        oreb_eff_ranked = _oreb_efficiency_ranked(conn, game_ids_by_team)
 
         def build(key, label, source, direction):
             if source == "trad":
@@ -703,7 +706,7 @@ def team_top_row(team_id, scope="season"):
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r["value"] if r else None
             else:
-                ranked = oreb_ranked
+                ranked = oreb_eff_ranked
                 r = next((x for x in ranked if x["id"] == team_id), None)
                 val = r["value"] if r else None
             if r is None:
