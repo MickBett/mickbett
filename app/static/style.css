@@ -604,6 +604,20 @@ body.modal-open { overflow: hidden; }
 
 /* 3 shot-clock windows side by side -- auto-fit so it degrades to 2 then
    1 column as space runs out, rather than a single hard breakpoint. */
+.mu-pdf-warning {
+  margin: 4px 0 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--critical);
+  background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.mu-pdf-warning strong { color: var(--critical); }
+.mu-pdf-warning ul { margin: 6px 0 0; padding-left: 18px; }
+.mu-pdf-warning li { margin: 2px 0; }
+#mu-export-pdf:disabled { opacity: 0.6; cursor: default; }
+
 .mu-scout-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
 .mu-scout-slot { padding: 14px; }
 .mu-scout-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }

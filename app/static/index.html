@@ -18,6 +18,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Season Tracker">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- Used only by the Matchup Scout "Export PDF" button -- captures the
+     Matchup Scout / 5 Minute / Shot Charts tabs as rendered and stitches
+     them into a downloadable PDF, entirely client-side.
+     html2canvas-pro (not plain html2canvas) -- the app's CSS leans on
+     color-mix() throughout (win/loss pills, tinted cards, etc.), which
+     this browser resolves via getComputedStyle into the modern
+     color(srgb ...) function syntax; stock html2canvas 1.4.x can't parse
+     that and throws mid-capture, this fork adds support for it. -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -282,7 +292,9 @@
     <div class="field-row">
       <label for="mu-team">Team</label>
       <select id="mu-team"></select>
+      <button id="mu-export-pdf" class="btn-primary" type="button">📄 Export Scouting PDF</button>
     </div>
+    <div id="mu-pdf-warning" class="mu-pdf-warning" style="display:none"></div>
     <div id="mu-content"></div>
   </section>
 </main>

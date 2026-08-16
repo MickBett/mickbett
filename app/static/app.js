@@ -1712,3 +1712,154 @@ async function updateMatchup() {
     </div>
     ${muScoutTakeawaysHtml(page.takeaways)}`;
 }
+
+// --------------------------------------------------------- PDF export ---
+// "Export Scouting PDF" (Matchup Scout tab) -- bundles the Matchup Scout,
+// 5 Minute, and Shot Charts tabs, in that order, into one downloaded PDF
+// for whichever team is currently selected. Refuses (with an explanation)
+// unless all 3 tabs already agree on the same team, rather than silently
+// mixing data from different teams onto one report.
+function muTeamName(id) {
+  const t = teams.find(x => String(x.id) === String(id));
+  return t ? t.name : null;
+}
+
+function muCheckPdfAlignment() {
+  const muId = $("#mu-team").value;
+  const fmId = $("#fm-team").value;
+  const scMode = $("#sc-mode").value;
+  const scId = $("#sc-team-filter").value;
+
+  const problems = [];
+  if (!muId) problems.push("Matchup Scout has no team selected.");
+  if (!fmId) problems.push("5 Minute tab has no team selected.");
+  if (scMode !== "team") {
+    const playerName = $("#sc-select option:checked")?.textContent;
+    problems.push(`Shot Charts tab is showing a PLAYER${playerName ? ` (${playerName})` : ""}, not a team — switch its "Show" dropdown to "Team".`);
+  } else if (!scId) {
+    problems.push("Shot Charts tab has no team selected.");
+  }
+  if (problems.length) return { ok: false, problems };
+
+  const muName = muTeamName(muId), fmName = muTeamName(fmId), scName = muTeamName(scId);
+  if (muName !== fmName || muName !== scName) {
+    return {
+      ok: false,
+      problems: [`Team mismatch across tabs — Matchup Scout: ${muName || "—"}, 5 Minute: ${fmName || "—"}, Shot Charts: ${scName || "—"}. Set all 3 to the same team, then export again.`],
+    };
+  }
+  return { ok: true, teamName: muName };
+}
+
+function muShowPdfWarning(problems) {
+  $("#mu-pdf-warning").innerHTML = `<strong>Can't build the PDF:</strong><ul>${problems.map(p => `<li>${p}</li>`).join("")}</ul>`;
+  $("#mu-pdf-warning").style.display = "";
+}
+function muHidePdfWarning() {
+  $("#mu-pdf-warning").style.display = "none";
+}
+
+// html2canvas snapshots whatever's currently painted -- if a chart <img>
+// is still mid-fetch that would capture blank, so wait each one out first.
+function muWaitForImages(container) {
+  const pending = $$("img", container).filter(img => !img.complete);
+  return Promise.all(pending.map(img => new Promise(res => {
+    img.addEventListener("load", res, { once: true });
+    img.addEventListener("error", res, { once: true });
+  })));
+}
+
+async function muCapturePanel(panelId) {
+  const panel = document.getElementById(panelId);
+  await muWaitForImages(panel);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // let layout/Chart.js settle
+  return html2canvas(panel, {
+    backgroundColor: getComputedStyle(document.body).backgroundColor || "#ffffff",
+    scale: 2,
+    useCORS: true,
+  });
+}
+
+// Adds one canvas to the PDF, full-width on the page; if it's taller than
+// one page it spills onto as many extra pages as it needs rather than
+// getting squashed or cropped.
+function muAddCanvasToPdf(doc, canvas, margin) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const imgW = pageW - margin * 2;
+  const imgH = (canvas.height / canvas.width) * imgW;
+  const pageContentH = pageH - margin * 2;
+
+  if (imgH <= pageContentH) {
+    doc.addImage(canvas.toDataURL("image/png"), "PNG", margin, margin, imgW, imgH);
+    return;
+  }
+  const pxPerPt = canvas.width / imgW;
+  let renderedH = 0, first = true;
+  while (renderedH < imgH) {
+    if (!first) doc.addPage();
+    first = false;
+    const sliceH = Math.min(pageContentH, imgH - renderedH);
+    const slice = document.createElement("canvas");
+    slice.width = canvas.width;
+    slice.height = Math.round(sliceH * pxPerPt);
+    slice.getContext("2d").drawImage(
+      canvas, 0, Math.round(renderedH * pxPerPt), canvas.width, slice.height,
+      0, 0, canvas.width, slice.height,
+    );
+    doc.addImage(slice.toDataURL("image/png"), "PNG", margin, margin, imgW, sliceH);
+    renderedH += sliceH;
+  }
+}
+
+async function exportMatchupPdf() {
+  muHidePdfWarning();
+  const check = muCheckPdfAlignment();
+  if (!check.ok) { muShowPdfWarning(check.problems); return; }
+
+  const btn = $("#mu-export-pdf");
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+
+  const activeBtn = $(".tab-btn.active");
+  const startingTab = activeBtn ? activeBtn.dataset.tab : "matchup";
+
+  // Switch panels directly (not via activateTab) so we don't trigger
+  // loadShotChartOptions(), which unconditionally rebuilds the Shot
+  // Charts team dropdown and would reset it off the team we just
+  // confirmed is aligned.
+  function showPanel(tab) {
+    $$(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    $$(".tab-panel").forEach(p => p.classList.toggle("active", p.id === `tab-${tab}`));
+  }
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+    const margin = 24;
+    const pages = [
+      { tab: "matchup", panel: "tab-matchup", refresh: updateMatchup, label: "Matchup Scout" },
+      { tab: "fivemin", panel: "tab-fivemin", refresh: updateFiveMin, label: "5 Minute Splits" },
+      { tab: "shotcharts", panel: "tab-shotcharts", refresh: updateShotChart, label: "Shot Charts" },
+    ];
+
+    for (let i = 0; i < pages.length; i++) {
+      const { tab, panel, refresh, label } = pages[i];
+      btn.textContent = `Building PDF… (${label})`;
+      showPanel(tab);
+      await refresh();
+      const canvas = await muCapturePanel(panel);
+      if (i > 0) doc.addPage();
+      muAddCanvasToPdf(doc, canvas, margin);
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    doc.save(`${check.teamName.replace(/[^a-z0-9]+/gi, "_")}_Scouting_Report_${stamp}.pdf`);
+  } finally {
+    showPanel(startingTab);
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+
+$("#mu-export-pdf").addEventListener("click", exportMatchupPdf);
