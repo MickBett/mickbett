@@ -965,11 +965,6 @@ def team_oreb_outcomes(team_id, scope="season"):
         conn.close()
 
 
-def _stat_bullet(stat, pool_word="league"):
-    unit = "%" if stat["is_pct"] else ""
-    return f"#{stat['rank']} of {stat['pool']} in the {pool_word} ({stat['value']}{unit})"
-
-
 def _bucket_tile_stats(conn, team_id, bucket, game_ids_by_team=None):
     """Points/2PT%/3PT% for ONE shot-clock window, offense AND defense --
     6 candidate stats, each shaped as {label, value, rank, pool, avg,
@@ -1022,50 +1017,35 @@ def _scout_bullets(season_stats, last3_stats, side):
     Returns (season_list, emerging_list): every qualifying season stat
     paired with its last-3 read, plus any stat that ONLY qualifies over
     the last 3 games. Shared by both sides of team_scout_takeaways so the
-    (symmetric) weakness scan doesn't duplicate the strength scan."""
+    (symmetric) weakness scan doesn't duplicate the strength scan.
+
+    Every entry carries the full trio -- season value/rank, last-3
+    value/rank, and the league average -- regardless of which side
+    qualified it, condensed-format-ready: the frontend builds a one-line
+    "season -> last 3" read (with an up/down arrow off the rank
+    comparison) and a 3-bar chart straight from these fields, no prose
+    text generated here."""
     def qualifies(rank, pool):
         return rank <= 3 if side == "strength" else rank > pool - 3
-
-    def fmt(stat):
-        return f"{stat['value']}%" if stat["is_pct"] else stat["value"]
 
     season_list, emerging_list = [], []
     for key, s in season_stats.items():
         l3 = last3_stats.get(key) if last3_stats else None
+        entry = {
+            "label": s["label"], "is_pct": s["is_pct"],
+            "season_value": s["value"], "season_rank": s["rank"], "pool": s["pool"],
+            "league_avg": s["avg"],
+            "last3_value": l3["value"] if l3 else None,
+            "last3_rank": l3["rank"] if l3 else None,
+        }
         if qualifies(s["rank"], s["pool"]):
-            entry = {
-                "label": s["label"], "value": s["value"], "rank": s["rank"], "pool": s["pool"], "is_pct": s["is_pct"],
-                "compare_label": "League avg", "compare_value": s["avg"],
-            }
-            if l3:
-                if side == "strength":
-                    trend = ("holding up" if l3["rank"] <= 3
-                              else "cooled to the middle of the pack" if l3["rank"] <= 7 else "fallen off")
-                else:
-                    trend = ("still a problem" if l3["rank"] > l3["pool"] - 3
-                              else "improved to the middle of the pack" if l3["rank"] > 3 else "turned into a strength")
-                entry["text"] = (
-                    f"{s['label']} -- {_stat_bullet(s)} this season, {trend} over the last 3 "
-                    f"(#{l3['rank']} of {l3['pool']}, {fmt(l3)})."
-                )
-                entry["last3_value"], entry["last3_rank"], entry["last3_pool"] = l3["value"], l3["rank"], l3["pool"]
-            else:
-                entry["text"] = f"{s['label']} -- {_stat_bullet(s)} this season ({fmt(s)})."
-            season_list.append(entry)
+            season_list.append({**entry, "emerging": False})
         if l3 and qualifies(l3["rank"], l3["pool"]) and not qualifies(s["rank"], s["pool"]):
-            noun = "strength" if side == "strength" else "weakness"
-            emerging_list.append({
-                "label": s["label"], "value": l3["value"], "rank": l3["rank"], "pool": l3["pool"], "is_pct": s["is_pct"],
-                "compare_label": "Season", "compare_value": s["value"],
-                "text": (
-                    f"{s['label']} -- #{l3['rank']} of {l3['pool']} over the last 3 ({fmt(l3)}), not a "
-                    f"season-long {noun} (#{s['rank']} of {s['pool']}, {fmt(s)})."
-                ),
-            })
+            emerging_list.append({**entry, "emerging": True})
 
     reverse = side == "weakness"
-    season_list.sort(key=lambda e: e["rank"], reverse=reverse)
-    emerging_list.sort(key=lambda e: e["rank"], reverse=reverse)
+    season_list.sort(key=lambda e: e["season_rank"], reverse=reverse)
+    emerging_list.sort(key=lambda e: e["last3_rank"] if e["last3_rank"] is not None else 999, reverse=reverse)
     return season_list, emerging_list
 
 

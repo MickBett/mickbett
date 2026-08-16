@@ -1594,58 +1594,76 @@ function muLast3GamesListHtml(resultsData) {
     </table>`;
 }
 
-// Closing "Strengths / Weaknesses" section -- side by side, each bullet
-// backed by a small 2-bar chart (this team's number vs. the league
-// average, or their own season number for "emerging" bullets), so every
-// claim has visual evidence alongside the data spelled out in the text.
-// Covers season-overall AND shot-clock offense/defense splits.
-function muTakeawayBar(label, value, displayValue, max, color) {
-  const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
-  return `
-    <div class="mu-takeaway-bar-row">
-      <span class="mu-takeaway-bar-label">${label}</span>
-      <div class="mu-takeaway-bar-track"><div class="mu-takeaway-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-      <span class="mu-takeaway-bar-value">${displayValue}</span>
-    </div>`;
+// Closing "Strengths / Weaknesses" section -- one condensed card per
+// shot-clock window (Early Offence/Half Court/Late Clock), the 3 sitting
+// side by side. Each stat is a single condensed line -- season read, an
+// up/down arrow (green/red) off the rank comparison, then the last-3
+// read -- backed by a compact 3-bar chart (season / last 3 / league avg).
+
+function muFmt(v, isPct) {
+  return v == null ? "—" : (isPct ? `${v}%` : v);
 }
 
-// Draws the "this stat" bar plus its comparison bar, given anything with
-// {label, value, is_pct, compare_label, compare_value}.
-function muEntryBars(entry, color) {
-  const dispVal = entry.is_pct ? `${entry.value}%` : entry.value;
-  const dispCmp = entry.is_pct ? `${entry.compare_value}%` : entry.compare_value;
-  const max = Math.max(entry.value, entry.compare_value) * 1.15 || 1;
-  return muTakeawayBar(entry.label, entry.value, dispVal, max, color)
-       + muTakeawayBar(entry.compare_label, entry.compare_value, dispCmp, max, "var(--text-muted)");
+// Rank comparison drives the arrow, not the raw value -- a lower rank is
+// always "better" regardless of whether the underlying stat itself is a
+// higher-is-better or lower-is-better number (already baked into rank).
+function muArrow(seasonRank, last3Rank) {
+  if (last3Rank == null) return { symbol: "", color: "var(--text-muted)" };
+  if (last3Rank < seasonRank) return { symbol: "▲", color: "var(--good)" };
+  if (last3Rank > seasonRank) return { symbol: "▼", color: "var(--critical)" };
+  return { symbol: "•", color: "var(--text-muted)" };
 }
 
-function muScoutBullet(e, color) {
+function muCondensedBars(e, color) {
+  const vals = [e.season_value, e.last3_value, e.league_avg].filter(v => v != null);
+  const max = Math.max(...vals) * 1.15 || 1;
+  const bar = (label, val, barColor) => {
+    if (val == null) return "";
+    const pct = Math.max(4, Math.round((val / max) * 100));
+    return `
+      <div class="mu-takeaway-bar-row">
+        <span class="mu-takeaway-bar-label">${label}</span>
+        <div class="mu-takeaway-bar-track"><div class="mu-takeaway-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <span class="mu-takeaway-bar-value">${muFmt(val, e.is_pct)}</span>
+      </div>`;
+  };
+  return bar("Season", e.season_value, color) + bar("Last 3", e.last3_value, color) + bar("Lge avg", e.league_avg, "var(--text-muted)");
+}
+
+function muCondensedStat(e, color) {
+  const arrow = muArrow(e.season_rank, e.last3_rank);
+  const last3Text = e.last3_rank != null ? `#${e.last3_rank} (${muFmt(e.last3_value, e.is_pct)})` : "—";
   return `
     <li class="mu-strength-item">
-      <p class="mu-summary-text" style="margin:0 0 6px">${e.text}</p>
-      ${muEntryBars(e, color)}
+      <div class="mu-condensed-label">${e.label}</div>
+      <div class="mu-condensed-row">
+        <span class="mu-condensed-season">#${e.season_rank} (${muFmt(e.season_value, e.is_pct)})</span>
+        <span class="mu-condensed-arrow" style="color:${arrow.color}">${arrow.symbol}</span>
+        <span class="mu-condensed-last3">Last 3: ${last3Text}</span>
+      </div>
+      ${muCondensedBars(e, color)}
     </li>`;
 }
 
 // One column (Strengths or Weaknesses) within a shot-clock slot -- a
-// flat bullet list (each bullet's own text already says whether it's a
-// season-long read or something that only emerged over the last 3).
+// flat, condensed bullet list (each row's own "emerging" flag isn't
+// shown explicitly -- season vs. last-3-only reads the same way here).
 function muScoutColumnHtml(title, color, bullets, emptyText) {
   return `
     <div>
       <div class="mu-strength-subhead" style="margin-top:0">${title}</div>
       ${bullets.length
-        ? `<ul class="mu-strength-list">${bullets.map(e => muScoutBullet(e, color)).join("")}</ul>`
+        ? `<ul class="mu-strength-list">${bullets.map(e => muCondensedStat(e, color)).join("")}</ul>`
         : `<p class="muted">${emptyText}</p>`}
     </div>`;
 }
 
 // One shot-clock window (Early Offence/Half Court/Late Clock) -- its
-// own Strengths | Weaknesses side-by-side split, covering points/2PT%/
-// 3PT% on both offense and defense within just that window.
+// own Strengths | Weaknesses split, covering points/2PT%/3PT% on both
+// offense and defense within just that window.
 function muScoutSlotHtml(slot) {
   return `
-    <div class="card" style="margin-top:16px">
+    <div class="card mu-scout-slot">
       <h3 style="margin-top:0">${slot.label}</h3>
       <div class="mu-scout-columns">
         ${muScoutColumnHtml("Strengths", "#4169e1", slot.strengths, "No strength shows up in this window.")}
@@ -1654,9 +1672,13 @@ function muScoutSlotHtml(slot) {
     </div>`;
 }
 
+// All 3 windows side by side rather than stacked.
 function muScoutTakeawaysHtml(data) {
   if (!data || !data.slots || !data.slots.length) return "";
-  return data.slots.map(muScoutSlotHtml).join("");
+  return `
+    <div class="mu-scout-slots" style="margin-top:16px">
+      ${data.slots.map(muScoutSlotHtml).join("")}
+    </div>`;
 }
 
 async function updateMatchup() {
