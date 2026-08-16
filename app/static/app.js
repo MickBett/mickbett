@@ -1601,7 +1601,9 @@ function muLast3GamesListHtml(resultsData) {
 // read -- backed by a compact 3-bar chart (season / last 3 / league avg).
 
 function muFmt(v, isPct) {
-  return v == null ? "—" : (isPct ? `${v}%` : v);
+  // Whole-number % here (no decimal) -- this section is tight on width
+  // and the tenth of a point isn't worth the extra character.
+  return v == null ? "—" : (isPct ? `${Math.round(v)}%` : v);
 }
 
 // Rank comparison drives the arrow, not the raw value -- a lower rank is
@@ -1658,13 +1660,20 @@ function muScoutColumnHtml(title, color, bullets, emptyText) {
     </div>`;
 }
 
+// A distinct accent per shot-clock window so the 3 cards read apart at a
+// glance, independent of the blue/red strength-vs-weakness coloring inside
+// each one. Amber/violet/teal -- clear of both the strength blue and the
+// weakness red.
+const MU_SLOT_ACCENTS = ["#d68910", "#8e44ad", "#12897a"];
+
 // One shot-clock window (Early Offence/Half Court/Late Clock) -- its
 // own Strengths | Weaknesses split, covering points/2PT%/3PT% on both
 // offense and defense within just that window.
-function muScoutSlotHtml(slot) {
+function muScoutSlotHtml(slot, i) {
+  const accent = MU_SLOT_ACCENTS[i % MU_SLOT_ACCENTS.length];
   return `
-    <div class="card mu-scout-slot">
-      <h3 style="margin-top:0">${slot.label}</h3>
+    <div class="card mu-scout-slot" style="border-top: 3px solid ${accent}; background: color-mix(in srgb, ${accent} 5%, var(--surface-1));">
+      <h3 style="margin-top:0; color: ${accent}">${slot.label}</h3>
       <div class="mu-scout-columns">
         ${muScoutColumnHtml("Strengths", "#4169e1", slot.strengths, "No strength shows up in this window.")}
         ${muScoutColumnHtml("Weaknesses", "var(--critical)", slot.weaknesses, "No weakness shows up in this window.")}
@@ -1677,7 +1686,7 @@ function muScoutTakeawaysHtml(data) {
   if (!data || !data.slots || !data.slots.length) return "";
   return `
     <div class="mu-scout-slots" style="margin-top:16px">
-      ${data.slots.map(muScoutSlotHtml).join("")}
+      ${data.slots.map((slot, i) => muScoutSlotHtml(slot, i)).join("")}
     </div>`;
 }
 
