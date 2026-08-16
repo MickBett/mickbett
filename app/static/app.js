@@ -1297,6 +1297,17 @@ function fmTierCell(rank) {
   return `<td class="num ${t.cls}">${t.label}${rank != null ? ` (${rank})` : ""}</td>`;
 }
 
+// Avg Rank's tier normally follows its own value, but a segment that's
+// genuinely strong on scoring shouldn't get dragged down to Middle/Weak
+// just because shooting/tov/fouls pulled the average outside <4 -- if
+// Points itself is Strong, the segment's overall read is Strong too,
+// whatever the raw average says. The average is still shown as-is.
+function fmAvgRankCell(avgRank, ptsRank) {
+  const forcedStrong = ptsRank != null && ptsRank < 4;
+  const t = forcedStrong ? { label: "Strong", cls: "tier-strong" } : fmTier(avgRank);
+  return `<td class="num ${t.cls}">${t.label} (${avgRank})</td>`;
+}
+
 // A quick per-segment strong/middle/weak read across points, all 3
 // shooting splits, turnovers, and fouls -- the "where does this team
 // actually win/lose stretches of the game" table. FT is ranked by
@@ -1313,11 +1324,11 @@ function renderFiveMinReadTable(rows, tableSel = "#fm-read-table") {
       <tbody>
         ${rows.map(r => {
           const ranks = [r.pts.rank, r.fg2.rank, r.fg3.rank, r.ft.rank, r.tov.rank, r.fouls.rank];
-          const avgRank = ranks.reduce((sum, v) => sum + v, 0) / ranks.length;
+          const avgRank = Math.round((ranks.reduce((sum, v) => sum + v, 0) / ranks.length) * 10) / 10;
           return `
           <tr>
             <td class="fm-segment-cell">${r.label}m</td>
-            ${fmTierCell(Math.round(avgRank * 10) / 10)}
+            ${fmAvgRankCell(avgRank, r.pts.rank)}
             ${fmTierCell(r.pts.rank)}
             ${fmTierCell(r.fg2.rank)}
             ${fmTierCell(r.fg3.rank)}
