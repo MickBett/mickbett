@@ -2033,8 +2033,10 @@ async function updateMatchup() {
 // "Export Scouting PDF" (Matchup Scout tab) -- bundles the Matchup Scout,
 // 5 Minute, Team Shot Chart, and Player Shot Chart tabs into one
 // downloaded PDF for whichever team is currently selected: 5 fixed team
-// pages plus 1 page per player currently populated in the Player Shot
-// Chart tab's 5 slots (so up to 10 pages total). Refuses (with an
+// pages, then 1 page per player currently populated in the Player Shot
+// Chart tab's 5 slots (pages 6-10, however many are filled in), then 1
+// page per game for the team's last 3 games (pages 11-13, each the same
+// popup as the Game Log tab's) -- up to 13 pages total. Refuses (with an
 // explanation) unless all 4 tabs already agree on the same team, rather
 // than silently mixing data from different teams onto one report.
 function muTeamName(id) {
@@ -2075,11 +2077,20 @@ function muHidePdfWarning() {
 
 // html2canvas snapshots whatever's currently painted -- if a chart <img>
 // is still mid-fetch that would capture blank, so wait each one out first.
-function muWaitForImages(container) {
+// A cross-origin image (team logo / player photo, both hosted on 3rd-
+// party domains with no CORS headers) occasionally never fires "load" OR
+// "error" in this environment -- observed hanging the whole export
+// indefinitely on one stuck <img>. Each image gets a hard timeout so one
+// stalled request can't block the rest of the capture; html2canvas will
+// just render that spot blank, same as it already does for the images
+// that DO fail cleanly.
+function muWaitForImages(container, timeoutMs = 4000) {
   const pending = $$("img", container).filter(img => !img.complete);
   return Promise.all(pending.map(img => new Promise(res => {
-    img.addEventListener("load", res, { once: true });
-    img.addEventListener("error", res, { once: true });
+    const done = () => { clearTimeout(timer); res(); };
+    const timer = setTimeout(done, timeoutMs);
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
   })));
 }
 
@@ -2190,10 +2201,29 @@ async function exportMatchupPdf() {
       }
     }
 
+    // Pages 11-13: the team's last 3 games, each essentially the same
+    // popup shown from the Game Log tab -- reuses showGame() as-is
+    // (same box scores, same 5-minute/shot-clock scoring charts) rather
+    // than rebuilding that view, so it's always exactly that popup, not
+    // a parallel version that can drift out of sync with it.
+    const muId = $("#mu-team").value;
+    const last3 = await (await fetch(`/api/teams/${muId}/last3-results`)).json();
+    const games = last3 && last3.games ? last3.games : [];
+    for (let i = 0; i < games.length; i++) {
+      const g = games[i];
+      const title = `${t} — Last 3 Games (${i + 1}/${games.length}): ${g.game_date} vs ${g.opponent.name}`;
+      btn.textContent = `Building PDF… (${title})`;
+      await showGame(g.game_id);
+      const canvas = await muCapturePanel("game-detail");
+      doc.addPage();
+      muAddCanvasToPdfPage(doc, canvas, margin, title);
+    }
+
     const stamp = new Date().toISOString().slice(0, 10);
     doc.save(`${check.teamName.replace(/[^a-z0-9]+/gi, "_")}_Scouting_Report_${stamp}.pdf`);
   } finally {
     showPanel(startingTab);
+    closeGameModal();
     btn.disabled = false;
     btn.textContent = prevLabel;
   }
