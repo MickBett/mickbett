@@ -286,13 +286,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 800;
 }
 .chart-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-#sc-clock-table, #zone-table, #rankings-table { overflow-x: auto; }
-#zone-table table { font-size: 12.5px; }
+.clock-table-wrap, .zone-table-wrap, #rankings-table { overflow-x: auto; }
+.zone-table-wrap table { font-size: 12.5px; }
 /* tighter than the zone table -- 9 columns need to fit in a half-width
    card now that the two charts sit side by side -- so every column,
    including "Fouled", stays visible without horizontal scrolling. */
-#sc-clock-table table { font-size: 10.5px; }
-#sc-clock-table th, #sc-clock-table td { padding: 5px 3px; white-space: nowrap; }
+.clock-table-wrap table { font-size: 10.5px; }
+.clock-table-wrap th, .clock-table-wrap td { padding: 5px 3px; white-space: nowrap; }
 .vol-max { color: var(--critical); font-weight: 800; }
 
 /* ----------------------------------------------------------- team summary */

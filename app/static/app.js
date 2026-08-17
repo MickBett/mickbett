@@ -47,7 +47,8 @@ function activateTab(tab) {
   if (tab === "standings") loadStandings();
   if (tab === "leaderboards") loadLeaderboards();
   if (tab === "rankings") loadRankings();
-  if (tab === "shotcharts") loadShotChartOptions();
+  if (tab === "teamshotchart") loadTeamShotChartOptions();
+  if (tab === "playershotchart") loadPlayerShotChartOptions();
   if (tab === "fivemin") loadFiveMinOptions();
   if (tab === "lineups") loadLineupOptions();
   if (tab === "games") loadGames();
@@ -242,6 +243,11 @@ async function loadRankings() {
     const rkTeams = await (await fetch("/api/teams")).json();
     $("#rk-team").insertAdjacentHTML("beforeend",
       rkTeams.map(t => `<option value="${t.name}">${t.name}</option>`).join(""));
+    // rk-team is keyed by team NAME (not id) and defaults to "" (All
+    // Teams) -- only steer it off that default if Matchup Scout already
+    // has a team picked.
+    const preferredName = muTeamName(muPreferredTeamId());
+    if (preferredName) $("#rk-team").value = preferredName;
   }
   updateRkFilterVisibility();
   loadRankingsTable();
@@ -311,41 +317,24 @@ async function loadRankingsTable() {
 }
 
 // ----------------------------------------------------------- shot charts -
+// Split into 2 tabs: Team Shot Chart (1 team, offense + defense) and
+// Player Shot Chart (1 team to filter the roster, then up to 5 players
+// compared side by side -- each in its own "slot").
 let teams = [], players = [];
-$("#sc-mode").addEventListener("change", onScModeChange);
-$("#sc-team-filter").addEventListener("change", onScTeamFilterChange);
-$("#sc-select").addEventListener("change", updateShotChart);
 
-async function loadShotChartOptions() {
-  teams = await (await fetch("/api/teams")).json();
-  players = await (await fetch("/api/players")).json();
-  $("#sc-team-filter").innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
-  onScModeChange();
+// Whichever team is selected on Matchup Scout, if any -- every other
+// tab's Team dropdown defaults to this the first time it's populated
+// (see each loadXOptions()), and re-syncs live via muSyncTeamToAllTabs()
+// below if Matchup Scout's selection changes after they've already been
+// visited. Picking a team on Matchup Scout is usually "I'm building on
+// this team", so the rest of the app should follow without re-picking it
+// in 5 different places -- it's also what makes the Export PDF button's
+// team-alignment check just pass.
+function muPreferredTeamId() {
+  const sel = $("#mu-team");
+  return sel && sel.value ? sel.value : null;
 }
 
-// Player mode is scoped to whichever team is selected in "Team" -- narrows
-// a 200+-player dropdown down to one roster instead of listing everyone.
-function populateScPlayerSelect() {
-  const teamId = $("#sc-team-filter").value;
-  const sel = $("#sc-select");
-  const prevValue = sel.value;
-  const roster = players.filter(p => String(p.team_id) === String(teamId));
-  sel.innerHTML = roster.map(p => `<option value="${p.player_id}">${p.name}</option>`).join("");
-  // keep the same player selected across a mode toggle if they're on this roster
-  if (roster.some(p => String(p.player_id) === prevValue)) sel.value = prevValue;
-}
-
-function onScModeChange() {
-  const mode = $("#sc-mode").value;
-  $("#sc-player-wrap").style.display = mode === "player" ? "" : "none";
-  if (mode === "player") populateScPlayerSelect();
-  updateShotChart();
-}
-
-function onScTeamFilterChange() {
-  if ($("#sc-mode").value === "player") populateScPlayerSelect();
-  updateShotChart();
-}
 function fmtMA(cell, isMax = false) {
   // cell: {m, a, pct} -> "12/20 (60%)", the highest-volume cell in bold red
   if (!cell || !cell.a) return "0/0 (—)";
@@ -359,129 +348,230 @@ async function getStandings() {
   return scStandings;
 }
 
-async function renderScProfile(mode, id) {
-  const el = $("#sc-profile");
-  if (mode === "team") {
-    const t = teams.find(x => String(x.id) === String(id));
-    if (!t) { el.innerHTML = ""; return; }
-    const [standings, trend] = await Promise.all([
-      getStandings(),
-      (await fetch(`/api/teams/${id}/trend`)).json(),
-    ]);
-    const row = standings.find(s => String(s.team_id) === String(id));
-    const last3 = trend.slice(-3).reverse().map(g => {
-      const win = g.pts > g.opp_pts;
-      const title = `${win ? "W" : "L"} ${g.pts}-${g.opp_pts} vs ${g.opponent} (${g.game_date})`;
-      return `<span class="result ${win ? "win" : "loss"}" title="${title}">${win ? "W" : "L"}</span>`;
-    }).join("") || "<span class='muted'>—</span>";
-    el.innerHTML = `
-      <div class="team-summary card">
-        ${teamLogo(t.logo_url, t.name)}
-        <div>
-          <div class="ts-name">${t.name}</div>
-          <div class="ts-record">${row ? `${row.wins}-${row.losses} record · ${(row.win_pct * 100).toFixed(1)}% win rate` : "—"}</div>
-        </div>
-        <div class="ts-stats">
-          <div class="stat"><div class="v">${row ? row.ppg : "—"}</div><div class="l">PPG For</div></div>
-          <div class="stat"><div class="v">${row ? row.papg : "—"}</div><div class="l">PPG Against</div></div>
-          <div class="stat"><div class="v">${row ? (row.diff > 0 ? "+" : "") + row.diff : "—"}</div><div class="l">Diff</div></div>
-        </div>
-        <div class="ts-last3"><span class="l">Last 3</span>${last3}</div>
-      </div>`;
-  } else {
-    const p = players.find(x => String(x.player_id) === String(id));
-    if (!p) { el.innerHTML = ""; return; }
-    const trend = await (await fetch(`/api/players/${id}/trend`)).json();
-    const last5 = trend.slice(-5).reverse();
-    const sum = (arr, key) => arr.reduce((a, g) => a + (g[key] || 0), 0);
-    const l5 = last5.length ? {
-      ppg: (sum(last5, "pts") / last5.length).toFixed(1),
-      rpg: (sum(last5, "reb") / last5.length).toFixed(1),
-      apg: (sum(last5, "ast") / last5.length).toFixed(1),
-      spg: (sum(last5, "stl") / last5.length).toFixed(1),
-      bpg: (sum(last5, "blk") / last5.length).toFixed(1),
-      fg_pct: sum(last5, "fga") ? (sum(last5, "fgm") / sum(last5, "fga") * 100).toFixed(1) : null,
-      tp_pct: sum(last5, "tpa") ? (sum(last5, "tpm") / sum(last5, "tpa") * 100).toFixed(1) : null,
-      ft_pct: sum(last5, "fta") ? (sum(last5, "ftm") / sum(last5, "fta") * 100).toFixed(1) : null,
-    } : null;
-    el.innerHTML = `
-      <div class="player-summary card">
-        <div class="ps-header">
-          ${playerAvatar(p.photo_url, p.name)}
-          ${teamLogo(p.team_logo_url, p.team)}
-          <div><div class="profile-name">${p.name}</div><div class="profile-sub">${p.team}</div></div>
-        </div>
-        <div class="ps-body">
-          <div>
-            <div class="ps-section-title">Season averages · ${p.gp} GP</div>
-            <div class="ps-stats">
-              <div class="stat"><div class="v">${p.ppg}</div><div class="l">PPG</div></div>
-              <div class="stat"><div class="v">${p.rpg}</div><div class="l">RPG</div></div>
-              <div class="stat"><div class="v">${p.apg}</div><div class="l">APG</div></div>
-              <div class="stat"><div class="v">${p.spg}</div><div class="l">SPG</div></div>
-              <div class="stat"><div class="v">${p.bpg}</div><div class="l">BPG</div></div>
-              <div class="stat"><div class="v">${p.fg_pct ?? "—"}</div><div class="l">FG%</div></div>
-              <div class="stat"><div class="v">${p.tp_pct ?? "—"}</div><div class="l">3P%</div></div>
-              <div class="stat"><div class="v">${p.ft_pct ?? "—"}</div><div class="l">FT%</div></div>
-            </div>
-            <div class="ps-section-title ps-section-title-red">Last 5 games averages</div>
-            <div class="ps-stats ps-stats-sub">
-              ${l5 ? `
-                <div class="stat"><div class="v">${l5.ppg}</div><div class="l">PPG</div></div>
-                <div class="stat"><div class="v">${l5.rpg}</div><div class="l">RPG</div></div>
-                <div class="stat"><div class="v">${l5.apg}</div><div class="l">APG</div></div>
-                <div class="stat"><div class="v">${l5.spg}</div><div class="l">SPG</div></div>
-                <div class="stat"><div class="v">${l5.bpg}</div><div class="l">BPG</div></div>
-                <div class="stat"><div class="v">${l5.fg_pct ?? "—"}</div><div class="l">FG%</div></div>
-                <div class="stat"><div class="v">${l5.tp_pct ?? "—"}</div><div class="l">3P%</div></div>
-                <div class="stat"><div class="v">${l5.ft_pct ?? "—"}</div><div class="l">FT%</div></div>
-              ` : `<span class="muted">No games yet</span>`}
-            </div>
-          </div>
-          <div class="ps-last5">
-            <div class="ps-section-title">Last 5 games</div>
-            <table>
-              <thead><tr>
-                <th>Date</th><th>Opp</th><th class="num">Pts</th><th class="num">Reb</th>
-                <th class="num">Ast</th><th class="num">FG</th>
-              </tr></thead>
-              <tbody>
-                ${last5.length ? last5.map(g => `
-                  <tr>
-                    <td>${g.game_date}</td>
-                    <td>${g.opponent}</td>
-                    <td class="num">${g.pts}</td>
-                    <td class="num">${g.reb}</td>
-                    <td class="num">${g.ast}</td>
-                    <td class="num">${g.fgm}/${g.fga}</td>
-                  </tr>`).join("") : `<tr><td colspan="6" class="muted">No games yet</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-          <div class="ps-clockchart">
-            <div class="ps-section-title">Scoring by shot clock</div>
-            <div class="donut-wrap">
-              <canvas id="sc-clock-chart" width="140" height="140"></canvas>
-              ${playerAvatar(p.photo_url, p.name, "donut-avatar")}
-            </div>
-            <div id="sc-clock-chart-legend" class="ps-clockchart-legend"></div>
-          </div>
-        </div>
-      </div>`;
+// ------------------------------------------------------- team shot chart -
+$("#tsc-team").addEventListener("change", updateTeamShotChart);
+
+async function loadTeamShotChartOptions() {
+  if (!teams.length) teams = await (await fetch("/api/teams")).json();
+  if (!$("#tsc-team").options.length) {
+    $("#tsc-team").innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    if (muPreferredTeamId()) $("#tsc-team").value = muPreferredTeamId();
   }
+  updateTeamShotChart();
 }
 
-let scClockChart;
+async function renderTeamShotChartProfile(id) {
+  const el = $("#tsc-profile");
+  const t = teams.find(x => String(x.id) === String(id));
+  if (!t) { el.innerHTML = ""; return; }
+  const [standings, trend] = await Promise.all([
+    getStandings(),
+    (await fetch(`/api/teams/${id}/trend`)).json(),
+  ]);
+  const row = standings.find(s => String(s.team_id) === String(id));
+  const last3 = trend.slice(-3).reverse().map(g => {
+    const win = g.pts > g.opp_pts;
+    const title = `${win ? "W" : "L"} ${g.pts}-${g.opp_pts} vs ${g.opponent} (${g.game_date})`;
+    return `<span class="result ${win ? "win" : "loss"}" title="${title}">${win ? "W" : "L"}</span>`;
+  }).join("") || "<span class='muted'>—</span>";
+  el.innerHTML = `
+    <div class="team-summary card">
+      ${teamLogo(t.logo_url, t.name)}
+      <div>
+        <div class="ts-name">${t.name}</div>
+        <div class="ts-record">${row ? `${row.wins}-${row.losses} record · ${(row.win_pct * 100).toFixed(1)}% win rate` : "—"}</div>
+      </div>
+      <div class="ts-stats">
+        <div class="stat"><div class="v">${row ? row.ppg : "—"}</div><div class="l">PPG For</div></div>
+        <div class="stat"><div class="v">${row ? row.papg : "—"}</div><div class="l">PPG Against</div></div>
+        <div class="stat"><div class="v">${row ? (row.diff > 0 ? "+" : "") + row.diff : "—"}</div><div class="l">Diff</div></div>
+      </div>
+      <div class="ts-last3"><span class="l">Last 3</span>${last3}</div>
+    </div>`;
+}
+
+async function updateTeamShotChart() {
+  const id = $("#tsc-team").value;
+  if (!id) return;
+  await renderTeamShotChartProfile(id);
+  $("#tsc-image").src = `/api/teams/${id}/shotchart.png?t=${Date.now()}`;
+
+  const buckets = await (await fetch(`/api/teams/${id}/clock-breakdown`)).json();
+  renderClockTable("#tsc-clock-table", buckets);
+
+  $("#tsc-zone-image").src = `/api/teams/${id}/zonemap.png?t=${Date.now()}`;
+  const zoneRows = await (await fetch(`/api/teams/${id}/zone-breakdown`)).json();
+  renderZoneTable("#tsc-zone-table", zoneRows);
+
+  $("#tsc-image-def").src = `/api/teams/${id}/shotchart-against.png?t=${Date.now()}`;
+  $("#tsc-zone-image-def").src = `/api/teams/${id}/zonemap-against.png?t=${Date.now()}`;
+  const [bucketsDef, zoneRowsDef] = await Promise.all([
+    (await fetch(`/api/teams/${id}/clock-breakdown-against`)).json(),
+    (await fetch(`/api/teams/${id}/zone-breakdown-against`)).json(),
+  ]);
+  renderClockTable("#tsc-clock-table-def", bucketsDef);
+  renderZoneTable("#tsc-zone-table-def", zoneRowsDef);
+}
+
+// ----------------------------------------------------- player shot chart -
+// The Team + 5 Player dropdowns all live together in one field-row at the
+// top of the tab (static markup, not generated) -- the slot cards below
+// are just each player's rendered output, no controls of their own.
+const PSC_SLOT_COUNT = 5;
+$("#psc-team").addEventListener("change", populatePscPlayerSelects);
+$$(".psc-player-select").forEach(sel => sel.addEventListener("change", () => updatePlayerShotChartSlot(sel.dataset.slot)));
+
+function pscSlotHtml(slot) {
+  return `
+    <div class="card psc-slot" id="psc-slot-${slot}">
+      <h3 style="margin-top:0">Player ${slot}</h3>
+      <div id="psc-profile-${slot}"></div>
+      <div class="shotchart-grid">
+        <div class="chart-col">
+          <div class="card">
+            <img id="psc-image-${slot}" class="chart-img" alt="Shot chart" />
+          </div>
+          <div class="card">
+            <h3>Shot-clock breakdown <span class="hint" title="Approximate — derived from the game clock and the last possession-changing event (rebound, turnover, made basket, or period start), since the feed has no explicit shot-clock field. Buckets are seconds elapsed since the shot clock was last reset (0-8 = early clock, 18+ = late clock).">ⓘ</span></h3>
+            <div id="psc-clock-table-${slot}" class="clock-table-wrap"></div>
+          </div>
+        </div>
+        <div class="chart-col">
+          <div class="card">
+            <img id="psc-zone-image-${slot}" class="chart-img" alt="Zone map" />
+          </div>
+          <div class="card">
+            <h3>Zone breakdown <span class="hint" title="10 regions — 2PT split by distance (Paint, Short Corner L/R, Mid-Range L/R) and 3PT split by angle (Corner, Wing, Top, Wing, Corner).">ⓘ</span></h3>
+            <div id="psc-zone-table-${slot}" class="zone-table-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadPlayerShotChartOptions() {
+  if (!teams.length) teams = await (await fetch("/api/teams")).json();
+  if (!players.length) players = await (await fetch("/api/players")).json();
+  if (!$("#psc-team").options.length) {
+    $("#psc-team").innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    if (muPreferredTeamId()) $("#psc-team").value = muPreferredTeamId();
+  }
+  if (!$("#psc-slots").children.length) {
+    $("#psc-slots").innerHTML = Array.from({ length: PSC_SLOT_COUNT }, (_, i) => pscSlotHtml(i + 1)).join("");
+  }
+  populatePscPlayerSelects();
+}
+
+// Each of the 5 player dropdowns is scoped to whichever team is selected --
+// narrows a 200+-player list down to one roster. Slots default to the
+// first 5 players on the roster so switching teams gives an immediately
+// useful comparison rather than 5 blank pickers; a slot keeps its player
+// if they're still on the new roster.
+function populatePscPlayerSelects() {
+  const teamId = $("#psc-team").value;
+  const roster = players.filter(p => String(p.team_id) === String(teamId));
+  $$(".psc-player-select").forEach((sel, i) => {
+    const prevValue = sel.value;
+    sel.innerHTML = `<option value="">—</option>` + roster.map(p => `<option value="${p.player_id}">${p.name}</option>`).join("");
+    sel.value = roster.some(p => String(p.player_id) === prevValue) ? prevValue : (roster[i] ? roster[i].player_id : "");
+    updatePlayerShotChartSlot(sel.dataset.slot);
+  });
+}
+
+const pscClockCharts = {}; // slot -> Chart.js doughnut instance (independent per slot)
 const CLOCK_BUCKET_COLORS = ["#1b6b44", "#d6a431", "#7c8a7e"]; // 0-8s / 8-18s / 18+s
+
+async function renderPlayerShotChartProfile(id, slot) {
+  const el = document.getElementById(`psc-profile-${slot}`);
+  const p = players.find(x => String(x.player_id) === String(id));
+  if (!p) { el.innerHTML = ""; return; }
+  const trend = await (await fetch(`/api/players/${id}/trend`)).json();
+  const last5 = trend.slice(-5).reverse();
+  const sum = (arr, key) => arr.reduce((a, g) => a + (g[key] || 0), 0);
+  const l5 = last5.length ? {
+    ppg: (sum(last5, "pts") / last5.length).toFixed(1),
+    rpg: (sum(last5, "reb") / last5.length).toFixed(1),
+    apg: (sum(last5, "ast") / last5.length).toFixed(1),
+    spg: (sum(last5, "stl") / last5.length).toFixed(1),
+    bpg: (sum(last5, "blk") / last5.length).toFixed(1),
+    fg_pct: sum(last5, "fga") ? (sum(last5, "fgm") / sum(last5, "fga") * 100).toFixed(1) : null,
+    tp_pct: sum(last5, "tpa") ? (sum(last5, "tpm") / sum(last5, "tpa") * 100).toFixed(1) : null,
+    ft_pct: sum(last5, "fta") ? (sum(last5, "ftm") / sum(last5, "fta") * 100).toFixed(1) : null,
+  } : null;
+  el.innerHTML = `
+    <div class="player-summary card">
+      <div class="ps-header">
+        ${playerAvatar(p.photo_url, p.name)}
+        ${teamLogo(p.team_logo_url, p.team)}
+        <div><div class="profile-name">${p.name}</div><div class="profile-sub">${p.team}</div></div>
+      </div>
+      <div class="ps-body">
+        <div>
+          <div class="ps-section-title">Season averages · ${p.gp} GP</div>
+          <div class="ps-stats">
+            <div class="stat"><div class="v">${p.ppg}</div><div class="l">PPG</div></div>
+            <div class="stat"><div class="v">${p.rpg}</div><div class="l">RPG</div></div>
+            <div class="stat"><div class="v">${p.apg}</div><div class="l">APG</div></div>
+            <div class="stat"><div class="v">${p.spg}</div><div class="l">SPG</div></div>
+            <div class="stat"><div class="v">${p.bpg}</div><div class="l">BPG</div></div>
+            <div class="stat"><div class="v">${p.fg_pct ?? "—"}</div><div class="l">FG%</div></div>
+            <div class="stat"><div class="v">${p.tp_pct ?? "—"}</div><div class="l">3P%</div></div>
+            <div class="stat"><div class="v">${p.ft_pct ?? "—"}</div><div class="l">FT%</div></div>
+          </div>
+          <div class="ps-section-title ps-section-title-red">Last 5 games averages</div>
+          <div class="ps-stats ps-stats-sub">
+            ${l5 ? `
+              <div class="stat"><div class="v">${l5.ppg}</div><div class="l">PPG</div></div>
+              <div class="stat"><div class="v">${l5.rpg}</div><div class="l">RPG</div></div>
+              <div class="stat"><div class="v">${l5.apg}</div><div class="l">APG</div></div>
+              <div class="stat"><div class="v">${l5.spg}</div><div class="l">SPG</div></div>
+              <div class="stat"><div class="v">${l5.bpg}</div><div class="l">BPG</div></div>
+              <div class="stat"><div class="v">${l5.fg_pct ?? "—"}</div><div class="l">FG%</div></div>
+              <div class="stat"><div class="v">${l5.tp_pct ?? "—"}</div><div class="l">3P%</div></div>
+              <div class="stat"><div class="v">${l5.ft_pct ?? "—"}</div><div class="l">FT%</div></div>
+            ` : `<span class="muted">No games yet</span>`}
+          </div>
+        </div>
+        <div class="ps-last5">
+          <div class="ps-section-title">Last 5 games</div>
+          <table>
+            <thead><tr>
+              <th>Date</th><th>Opp</th><th class="num">Pts</th><th class="num">Reb</th>
+              <th class="num">Ast</th><th class="num">FG</th>
+            </tr></thead>
+            <tbody>
+              ${last5.length ? last5.map(g => `
+                <tr>
+                  <td>${g.game_date}</td>
+                  <td>${g.opponent}</td>
+                  <td class="num">${g.pts}</td>
+                  <td class="num">${g.reb}</td>
+                  <td class="num">${g.ast}</td>
+                  <td class="num">${g.fgm}/${g.fga}</td>
+                </tr>`).join("") : `<tr><td colspan="6" class="muted">No games yet</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <div class="ps-clockchart">
+          <div class="ps-section-title">Scoring by shot clock</div>
+          <div class="donut-wrap">
+            <canvas id="psc-clock-chart-${slot}" width="140" height="140"></canvas>
+            ${playerAvatar(p.photo_url, p.name, "donut-avatar")}
+          </div>
+          <div id="psc-clock-chart-legend-${slot}" class="ps-clockchart-legend"></div>
+        </div>
+      </div>
+    </div>`;
+}
 
 // "Which part of the shot clock they score in" -- points scored (not just
 // makes: 2s/3s/1s weighted) in each bucket, as a doughnut, with the
-// player's own photo filling the hole in the middle. Only rendered in
-// player mode, where the canvas from renderScProfile exists.
-function renderScClockChart(buckets, gp) {
-  const canvas = document.getElementById("sc-clock-chart");
-  const legendEl = document.getElementById("sc-clock-chart-legend");
-  if (scClockChart) { scClockChart.destroy(); scClockChart = null; }
+// player's own photo filling the hole in the middle. One independent
+// Chart.js instance per comparison slot (1-5) -- see pscClockCharts.
+function renderPlayerClockChart(buckets, gp, slot) {
+  const canvas = document.getElementById(`psc-clock-chart-${slot}`);
+  const legendEl = document.getElementById(`psc-clock-chart-legend-${slot}`);
+  if (pscClockCharts[slot]) { pscClockCharts[slot].destroy(); pscClockCharts[slot] = null; }
   if (!canvas) return;
   const labels = buckets.map(b => `${b.label}s`);
   const pts = buckets.map(b => (b.fg2.m || 0) * 2 + (b.fg3.m || 0) * 3 + (b.ft.m || 0));
@@ -491,7 +581,7 @@ function renderScClockChart(buckets, gp) {
   // Draws the per-game average straight onto each ring segment (not just
   // in the legend text) -- centered on that segment's own arc.
   const avgLabelPlugin = {
-    id: "clockAvgLabels",
+    id: `clockAvgLabels${slot}`,
     afterDraw(chart) {
       const meta = chart.getDatasetMeta(0);
       const ctx = chart.ctx;
@@ -526,7 +616,7 @@ function renderScClockChart(buckets, gp) {
     },
   };
 
-  scClockChart = new Chart(canvas, {
+  pscClockCharts[slot] = new Chart(canvas, {
     type: "doughnut",
     data: { labels, datasets: [{ data: pts, backgroundColor: CLOCK_BUCKET_COLORS, borderWidth: 0 }] },
     options: { plugins: { legend: { display: false } }, cutout: "62%" },
@@ -537,6 +627,31 @@ function renderScClockChart(buckets, gp) {
       <span><span class="sw" style="background:${CLOCK_BUCKET_COLORS[i]}"></span>${l}: ${pts[i]} pts${total ? ` (${Math.round(pts[i] / total * 100)}%)` : ""}${gp ? ` · ${(pts[i] / gp).toFixed(1)}/game` : ""}</span>
     `).join("");
   }
+}
+
+async function updatePlayerShotChartSlot(slot) {
+  const id = document.getElementById(`psc-player-${slot}`).value;
+  const profileEl = document.getElementById(`psc-profile-${slot}`);
+  if (!id) {
+    profileEl.innerHTML = "";
+    document.getElementById(`psc-image-${slot}`).src = "";
+    document.getElementById(`psc-zone-image-${slot}`).src = "";
+    $(`#psc-clock-table-${slot}`).innerHTML = "";
+    $(`#psc-zone-table-${slot}`).innerHTML = "";
+    if (pscClockCharts[slot]) { pscClockCharts[slot].destroy(); pscClockCharts[slot] = null; }
+    return;
+  }
+  await renderPlayerShotChartProfile(id, slot);
+  document.getElementById(`psc-image-${slot}`).src = `/api/players/${id}/shotchart.png?t=${Date.now()}`;
+
+  const buckets = await (await fetch(`/api/players/${id}/clock-breakdown`)).json();
+  const p = players.find(x => String(x.player_id) === String(id));
+  renderPlayerClockChart(buckets, p ? p.gp : null, slot);
+  renderClockTable(`#psc-clock-table-${slot}`, buckets);
+
+  document.getElementById(`psc-zone-image-${slot}`).src = `/api/players/${id}/zonemap.png?t=${Date.now()}`;
+  const zoneRows = await (await fetch(`/api/players/${id}/zone-breakdown`)).json();
+  renderZoneTable(`#psc-zone-table-${slot}`, zoneRows);
 }
 
 // For each shot type (2PT/3PT/FT) separately, which shot-clock section has
@@ -606,43 +721,6 @@ function renderZoneTable(elId, zoneRows) {
         }).join("")}
       </tbody>
     </table>`;
-}
-
-async function updateShotChart() {
-  const mode = $("#sc-mode").value;
-  const id = mode === "team" ? $("#sc-team-filter").value : $("#sc-select").value;
-  if (!id) return;
-  const base = mode === "team" ? "teams" : "players";
-  await renderScProfile(mode, id);
-  $("#sc-image").src = `/api/${base}/${id}/shotchart.png?t=${Date.now()}`;
-
-  const buckets = await (await fetch(`/api/${base}/${id}/clock-breakdown`)).json();
-  if (mode === "player") {
-    const p = players.find(x => String(x.player_id) === String(id));
-    renderScClockChart(buckets, p ? p.gp : null);
-  } else if (scClockChart) {
-    scClockChart.destroy();
-    scClockChart = null;
-  }
-  renderClockTable("#sc-clock-table", buckets);
-
-  $("#zone-image").src = `/api/${base}/${id}/zonemap.png?t=${Date.now()}`;
-  const zoneRows = await (await fetch(`/api/${base}/${id}/zone-breakdown`)).json();
-  renderZoneTable("#zone-table", zoneRows);
-
-  // Defense ("shots allowed") is a team-only concept -- shown as a second,
-  // identical set of charts/tables below, only when a team is selected.
-  $("#sc-defense-section").style.display = mode === "team" ? "" : "none";
-  if (mode === "team") {
-    $("#sc-image-def").src = `/api/teams/${id}/shotchart-against.png?t=${Date.now()}`;
-    $("#zone-image-def").src = `/api/teams/${id}/zonemap-against.png?t=${Date.now()}`;
-    const [bucketsDef, zoneRowsDef] = await Promise.all([
-      (await fetch(`/api/teams/${id}/clock-breakdown-against`)).json(),
-      (await fetch(`/api/teams/${id}/zone-breakdown-against`)).json(),
-    ]);
-    renderClockTable("#sc-clock-table-def", bucketsDef);
-    renderZoneTable("#zone-table-def", zoneRowsDef);
-  }
 }
 
 // --------------------------------------------------------------- games ---
@@ -894,6 +972,7 @@ async function loadStrengthsOptions() {
   const sel = $("#ts-team");
   if (!sel.options.length) {
     sel.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    if (muPreferredTeamId()) sel.value = muPreferredTeamId();
   }
   updateStrengths();
 }
@@ -1041,6 +1120,7 @@ async function loadFiveMinOptions() {
   const sel = $("#fm-team");
   if (!sel.options.length) {
     sel.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    if (muPreferredTeamId()) sel.value = muPreferredTeamId();
   }
   updateFiveMin();
 }
@@ -1363,6 +1443,7 @@ async function loadLineupOptions() {
   const sel = $("#lu-team");
   if (!sel.options.length) {
     sel.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    if (muPreferredTeamId()) sel.value = muPreferredTeamId();
   }
   updateLineups();
 }
@@ -1451,6 +1532,35 @@ function luStatsBlock(s) {
 
 // -------------------------------------------------------- matchup scout --
 $("#mu-team").addEventListener("change", updateMatchup);
+$("#mu-team").addEventListener("change", muSyncTeamToAllTabs);
+
+// Pushes Matchup Scout's team onto every other tab's Team dropdown that's
+// already been populated (a tab never visited yet just picks it up on its
+// own first load instead -- see muPreferredTeamId()). #rk-team is handled
+// separately below since its options are keyed by team NAME, not id, and
+// "" (All Teams) is a legitimate state that shouldn't get clobbered until
+// there's an actual team to switch it to.
+const MU_SYNCED_TEAM_ID_SELECTS = ["#fm-team", "#tsc-team", "#psc-team", "#lu-team", "#ts-team"];
+
+function muSyncTeamToAllTabs() {
+  const teamId = $("#mu-team").value;
+  if (!teamId) return;
+
+  MU_SYNCED_TEAM_ID_SELECTS.forEach(selector => {
+    const el = $(selector);
+    if (!el || !el.options.length || el.value === teamId) return;
+    if (![...el.options].some(o => o.value === teamId)) return;
+    el.value = teamId;
+    el.dispatchEvent(new Event("change"));
+  });
+
+  const rkSel = $("#rk-team");
+  const teamName = muTeamName(teamId);
+  if (rkSel && teamName && rkSel.value !== teamName && [...rkSel.options].some(o => o.value === teamName)) {
+    rkSel.value = teamName;
+    rkSel.dispatchEvent(new Event("change"));
+  }
+}
 
 async function loadMatchupOptions() {
   if (!teams.length) teams = await (await fetch("/api/teams")).json();
@@ -1715,10 +1825,12 @@ async function updateMatchup() {
 
 // --------------------------------------------------------- PDF export ---
 // "Export Scouting PDF" (Matchup Scout tab) -- bundles the Matchup Scout,
-// 5 Minute, and Shot Charts tabs, in that order, into one downloaded PDF
-// for whichever team is currently selected. Refuses (with an explanation)
-// unless all 3 tabs already agree on the same team, rather than silently
-// mixing data from different teams onto one report.
+// 5 Minute, Team Shot Chart, and Player Shot Chart tabs into one
+// downloaded PDF for whichever team is currently selected: 5 fixed team
+// pages plus 1 page per player currently populated in the Player Shot
+// Chart tab's 5 slots (so up to 10 pages total). Refuses (with an
+// explanation) unless all 4 tabs already agree on the same team, rather
+// than silently mixing data from different teams onto one report.
 function muTeamName(id) {
   const t = teams.find(x => String(x.id) === String(id));
   return t ? t.name : null;
@@ -1727,25 +1839,21 @@ function muTeamName(id) {
 function muCheckPdfAlignment() {
   const muId = $("#mu-team").value;
   const fmId = $("#fm-team").value;
-  const scMode = $("#sc-mode").value;
-  const scId = $("#sc-team-filter").value;
+  const tscId = $("#tsc-team").value;
+  const pscId = $("#psc-team").value;
 
   const problems = [];
   if (!muId) problems.push("Matchup Scout has no team selected.");
   if (!fmId) problems.push("5 Minute tab has no team selected.");
-  if (scMode !== "team") {
-    const playerName = $("#sc-select option:checked")?.textContent;
-    problems.push(`Shot Charts tab is showing a PLAYER${playerName ? ` (${playerName})` : ""}, not a team — switch its "Show" dropdown to "Team".`);
-  } else if (!scId) {
-    problems.push("Shot Charts tab has no team selected.");
-  }
+  if (!tscId) problems.push("Team Shot Chart tab has no team selected.");
+  if (!pscId) problems.push("Player Shot Chart tab has no team selected.");
   if (problems.length) return { ok: false, problems };
 
-  const muName = muTeamName(muId), fmName = muTeamName(fmId), scName = muTeamName(scId);
-  if (muName !== fmName || muName !== scName) {
+  const muName = muTeamName(muId), fmName = muTeamName(fmId), tscName = muTeamName(tscId), pscName = muTeamName(pscId);
+  if (muName !== fmName || muName !== tscName || muName !== pscName) {
     return {
       ok: false,
-      problems: [`Team mismatch across tabs — Matchup Scout: ${muName || "—"}, 5 Minute: ${fmName || "—"}, Shot Charts: ${scName || "—"}. Set all 3 to the same team, then export again.`],
+      problems: [`Team mismatch across tabs — Matchup Scout: ${muName || "—"}, 5 Minute: ${fmName || "—"}, Team Shot Chart: ${tscName || "—"}, Player Shot Chart: ${pscName || "—"}. Set all 4 to the same team, then export again.`],
     };
   }
   return { ok: true, teamName: muName };
@@ -1814,10 +1922,10 @@ async function exportMatchupPdf() {
   const activeBtn = $(".tab-btn.active");
   const startingTab = activeBtn ? activeBtn.dataset.tab : "matchup";
 
-  // Switch panels directly (not via activateTab) so we don't trigger
-  // loadShotChartOptions(), which unconditionally rebuilds the Shot
-  // Charts team dropdown and would reset it off the team we just
-  // confirmed is aligned.
+  // Switch panels directly (not via activateTab) -- activateTab's
+  // loadXOptions() calls re-fetch teams/players and rebuild dropdowns,
+  // which is unnecessary work here since every tab we're about to visit
+  // already has its team selected (that's what alignment just checked).
   function showPanel(tab) {
     $$(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     $$(".tab-panel").forEach(p => p.classList.toggle("active", p.id === `tab-${tab}`));
@@ -1828,8 +1936,24 @@ async function exportMatchupPdf() {
     const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
     const margin = 24;
     const t = check.teamName;
-    // 5 pages, one section each, one tab-switch+refresh per group (the
-    // 2 sub-captures within a group share the same render pass).
+    // 5 fixed team pages, one section each, one tab-switch+refresh per
+    // group (the sub-captures within a group share the same render
+    // pass) -- plus 1 page per player currently populated in the Player
+    // Shot Chart tab's 5 slots (pages 6-10, however many are filled in).
+    const pscCaptures = [];
+    for (let slot = 1; slot <= PSC_SLOT_COUNT; slot++) {
+      const sel = document.getElementById(`psc-player-${slot}`);
+      if (sel && sel.value) {
+        const playerName = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : `Player ${slot}`;
+        pscCaptures.push({ panel: `psc-slot-${slot}`, title: `${t} — Player Shot Chart: ${playerName}` });
+      }
+    }
+    // Re-renders whichever slots are populated (a fresh pull of each
+    // player's data) without touching the team or any slot's selection.
+    async function refreshPopulatedPlayerSlots() {
+      await Promise.all(pscCaptures.map(({ panel }) => updatePlayerShotChartSlot(panel.replace("psc-slot-", ""))));
+    }
+
     const groups = [
       { tab: "matchup", refresh: updateMatchup, captures: [
           { panel: "mu-content", title: `${t} — Matchup Scout` },
@@ -1838,11 +1962,14 @@ async function exportMatchupPdf() {
           { panel: "fm-offense-block", title: `${t} — 5 Minute Offence` },
           { panel: "fm-defense-block", title: `${t} — 5 Minute Defence` },
       ] },
-      { tab: "shotcharts", refresh: updateShotChart, captures: [
-          { panel: "sc-offense-block", title: `${t} — Shot Chart Offence` },
-          { panel: "sc-defense-section", title: `${t} — Shot Chart Defence` },
+      { tab: "teamshotchart", refresh: updateTeamShotChart, captures: [
+          { panel: "tsc-offense-block", title: `${t} — Shot Chart Offence` },
+          { panel: "tsc-defense-section", title: `${t} — Shot Chart Defence` },
       ] },
     ];
+    if (pscCaptures.length) {
+      groups.push({ tab: "playershotchart", refresh: refreshPopulatedPlayerSlots, captures: pscCaptures });
+    }
 
     let pageCount = 0;
     for (const group of groups) {
