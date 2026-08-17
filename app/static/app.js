@@ -402,6 +402,7 @@ async function updateTeamShotChart() {
   $("#tsc-zone-image").src = `/api/teams/${id}/zonemap.png?t=${Date.now()}`;
   const zoneRows = await (await fetch(`/api/teams/${id}/zone-breakdown`)).json();
   renderZoneTable("#tsc-zone-table", zoneRows);
+  $("#tsc-sw").innerHTML = tscZoneClockStrengthsWeaknessesHtml(zoneRows, "offense");
 
   $("#tsc-image-def").src = `/api/teams/${id}/shotchart-against.png?t=${Date.now()}`;
   $("#tsc-zone-image-def").src = `/api/teams/${id}/zonemap-against.png?t=${Date.now()}`;
@@ -411,6 +412,89 @@ async function updateTeamShotChart() {
   ]);
   renderClockTable("#tsc-clock-table-def", bucketsDef);
   renderZoneTable("#tsc-zone-table-def", zoneRowsDef);
+  $("#tsc-sw-def").innerHTML = tscZoneClockStrengthsWeaknessesHtml(zoneRowsDef, "defense");
+}
+
+const TSC_ZONE_SW_MIN_ATTEMPTS = 5; // zone x shot-clock cells are already a narrow slice -- don't call out a handful of attempts
+
+// Cross-references the zone breakdown table (10 court areas) with shot-
+// clock timing -- for each zone's 0-8s/8-18s/18+s column, how far that
+// window's shooting % sits from the SAME zone's own "Overall" average
+// (the zone table already computes that baseline, so this reuses it
+// rather than inventing a new one). mode="offense": high vs. that zone's
+// own norm is a strength ("funnel the ball here in this window"), low is
+// a weakness. mode="defense": the polarity flips -- holding opponents
+// BELOW their usual zone rate is the strength (good defense), letting
+// them shoot ABOVE it is the weakness (an area+window to attack).
+function tscComputeZoneClockStrengthsWeaknesses(zoneRows, mode) {
+  const candidates = [];
+  const higherIsBetter = mode === "offense";
+
+  zoneRows.forEach(z => {
+    if (!z.overall || !z.overall.a) return;
+    ["0-8", "8-18", "18+"].forEach(bucketKey => {
+      const cell = z[bucketKey];
+      if (!cell || cell.a < TSC_ZONE_SW_MIN_ATTEMPTS) return;
+      const diff = cell.pct - z.overall.pct;
+      const margin = higherIsBetter ? diff : -diff;
+      candidates.push({ zone: z.label, margin, cell, bucketKey, overallPct: z.overall.pct });
+    });
+  });
+
+  // Prefers 2 DIFFERENT zones over the same one showing up twice.
+  function pickDiverse(sorted, n) {
+    const chosen = [], usedZones = new Set();
+    for (const c of sorted) {
+      if (chosen.length >= n) break;
+      if (usedZones.has(c.zone)) continue;
+      chosen.push(c);
+      usedZones.add(c.zone);
+    }
+    for (const c of sorted) {
+      if (chosen.length >= n) break;
+      if (!chosen.includes(c)) chosen.push(c);
+    }
+    return chosen;
+  }
+
+  const EPS = 0.5; // percentage points -- ignore near-zero noise around the zone's own average
+  const strengths = pickDiverse(candidates.filter(c => c.margin > EPS).sort((a, b) => b.margin - a.margin), 2);
+  const weaknesses = pickDiverse(candidates.filter(c => c.margin < -EPS).sort((a, b) => a.margin - b.margin), 2);
+  return { strengths, weaknesses };
+}
+
+function tscZoneClockStrengthsWeaknessesHtml(zoneRows, mode) {
+  const { strengths, weaknesses } = tscComputeZoneClockStrengthsWeaknesses(zoneRows, mode);
+  const hlGood = (text) => `<span class="psc-sw-hl psc-sw-hl-good">${text}</span>`;
+  const hlBad = (text) => `<span class="psc-sw-hl psc-sw-hl-bad">${text}</span>`;
+
+  const sentence = (c, isStrength) => {
+    const clockName = pscBucketName(c.bucketKey);
+    const pctText = `${c.cell.pct}%`;
+    if (mode === "offense") {
+      return isStrength
+        ? `Funnel the ball to the <b>${c.zone}</b> in the ${clockName} window — shoots ${hlGood(pctText)} there (${c.cell.m}/${c.cell.a}), above their ${c.overallPct}% zone average.`
+        : `Avoid the <b>${c.zone}</b> in the ${clockName} window — just ${hlBad(pctText)} there (${c.cell.m}/${c.cell.a}), below their ${c.overallPct}% zone average.`;
+    }
+    // defense
+    return isStrength
+      ? `Locks down the <b>${c.zone}</b> in the ${clockName} window — holds opponents to ${hlGood(pctText)} there (${c.cell.m}/${c.cell.a}), below their ${c.overallPct}% average there.`
+      : `Funnel the ball to the <b>${c.zone}</b> in the ${clockName} window — opponents shoot ${hlBad(pctText)} there (${c.cell.m}/${c.cell.a}), above their ${c.overallPct}% average there.`;
+  };
+
+  const column = (title, cls, items, isStrength, emptyText) => `
+    <div>
+      <div class="psc-sw-head ${cls}">${title}</div>
+      ${items.length
+        ? `<ul class="psc-sw-list">${items.map(c => `<li>${sentence(c, isStrength)}</li>`).join("")}</ul>`
+        : `<p class="muted">${emptyText}</p>`}
+    </div>`;
+
+  return `
+    <div class="psc-sw">
+      ${column("Strengths", "psc-sw-head-good", strengths, true, "No area+window stands out above its own zone average.")}
+      ${column("Weaknesses", "psc-sw-head-bad", weaknesses, false, "No area+window falls notably below its own zone average.")}
+    </div>`;
 }
 
 // ----------------------------------------------------- player shot chart -
