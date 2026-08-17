@@ -690,13 +690,33 @@ function pscComputeStrengthsWeaknesses(buckets) {
     });
   }
 
-  scan("2pt", true,
-    buckets.filter(b => b.fg2.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg2.pct })),
-    e => (hl) => `Shoots ${hl(`${e.value}%`)} on 2PT in the ${pscBucketName(e.b.label)} (${e.b.fg2.m}/${e.b.fg2.a}).`);
+  // Which shot type(s) are worth commenting on for this player -- a
+  // roughly 50/50 shooter earns a look at both 2PT% and 3PT%, but if his
+  // shot diet leans hard one way, a scattered handful of the other
+  // type's attempts isn't meaningful signal, so only the higher-volume
+  // type gets scanned. "Roughly even" = the minority type still makes up
+  // at least 35% of his total shot volume across all 3 windows.
+  const total2 = buckets.reduce((s, b) => s + b.fg2.a, 0);
+  const total3 = buckets.reduce((s, b) => s + b.fg3.a, 0);
+  const totalShots = total2 + total3;
+  let include2pt = false, include3pt = false;
+  if (totalShots > 0) {
+    const balanced = Math.min(total2, total3) / totalShots >= 0.35;
+    include2pt = balanced || total2 >= total3;
+    include3pt = balanced || total3 >= total2;
+  }
 
-  scan("3pt", true,
-    buckets.filter(b => b.fg3.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg3.pct })),
-    e => (hl) => `Shoots ${hl(`${e.value}%`)} on 3PT in the ${pscBucketName(e.b.label)} (${e.b.fg3.m}/${e.b.fg3.a}).`);
+  if (include2pt) {
+    scan("2pt", true,
+      buckets.filter(b => b.fg2.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg2.pct })),
+      e => (hl) => `Shoots ${hl(`${e.value}%`)} on 2PT in the ${pscBucketName(e.b.label)} (${e.b.fg2.m}/${e.b.fg2.a}).`);
+  }
+
+  if (include3pt) {
+    scan("3pt", true,
+      buckets.filter(b => b.fg3.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg3.pct })),
+      e => (hl) => `Shoots ${hl(`${e.value}%`)} on 3PT in the ${pscBucketName(e.b.label)} (${e.b.fg3.m}/${e.b.fg3.a}).`);
+  }
 
   scan("oreb", true,
     buckets.map(b => ({ b, value: b.oreb_2pt + b.oreb_3pt })),
