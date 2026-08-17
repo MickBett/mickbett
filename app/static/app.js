@@ -435,6 +435,10 @@ function pscSlotHtml(slot) {
             <h3>Shot-clock breakdown <span class="hint" title="Approximate — derived from the game clock and the last possession-changing event (rebound, turnover, made basket, or period start), since the feed has no explicit shot-clock field. Buckets are seconds elapsed since the shot clock was last reset (0-8 = early clock, 18+ = late clock).">ⓘ</span></h3>
             <div id="psc-clock-table-${slot}" class="clock-table-wrap"></div>
           </div>
+          <div class="card">
+            <h3>Strengths &amp; weaknesses <span class="hint" title="How this player's own shot-clock windows compare to EACH OTHER (not a league benchmark) -- 2PT%/3PT% (min. 3 attempts to qualify), offensive rebounds, fouls drawn, and turnovers.">ⓘ</span></h3>
+            <div id="psc-sw-${slot}"></div>
+          </div>
         </div>
         <div class="chart-col">
           <div class="card">
@@ -638,6 +642,7 @@ async function updatePlayerShotChartSlot(slot) {
     document.getElementById(`psc-zone-image-${slot}`).src = "";
     $(`#psc-clock-table-${slot}`).innerHTML = "";
     $(`#psc-zone-table-${slot}`).innerHTML = "";
+    $(`#psc-sw-${slot}`).innerHTML = "";
     if (pscClockCharts[slot]) { pscClockCharts[slot].destroy(); pscClockCharts[slot] = null; }
     return;
   }
@@ -648,10 +653,107 @@ async function updatePlayerShotChartSlot(slot) {
   const p = players.find(x => String(x.player_id) === String(id));
   renderPlayerClockChart(buckets, p ? p.gp : null, slot);
   renderClockTable(`#psc-clock-table-${slot}`, buckets);
+  $(`#psc-sw-${slot}`).innerHTML = pscStrengthsWeaknessesHtml(buckets);
 
   document.getElementById(`psc-zone-image-${slot}`).src = `/api/players/${id}/zonemap.png?t=${Date.now()}`;
   const zoneRows = await (await fetch(`/api/players/${id}/zone-breakdown`)).json();
   renderZoneTable(`#psc-zone-table-${slot}`, zoneRows);
+}
+
+// Human-readable name for a shot-clock bucket's raw key ("0-8"/"8-18"/
+// "18+") -- same 3 windows as the table above, just spelled out since
+// these become full sentences.
+const PSC_BUCKET_NAMES = { "0-8": "0-8s (early clock)", "8-18": "8-18s (half court)", "18+": "18+s (late clock)" };
+function pscBucketName(label) {
+  return PSC_BUCKET_NAMES[label] || `${label}s`;
+}
+
+const PSC_SW_MIN_ATTEMPTS = 3; // don't call out a shooting % off a tiny sample
+
+// Scans a player's OWN 3 shot-clock windows (not a league comparison) for
+// the 2 most notable strengths and 2 most notable weaknesses, across 4
+// stats per window: 2PT%/3PT% (min. 3 attempts to qualify), offensive
+// rebounds, fouls drawn (getting to the line -- more is good), and
+// turnovers (fewer is good). "Notable" = furthest from that player's own
+// average for the same stat across their other windows -- e.g. a bucket
+// where he shoots well above his own norm, or turns it over well above
+// his own norm.
+function pscComputeStrengthsWeaknesses(buckets) {
+  const candidates = [];
+
+  function scan(metric, higherIsBetter, entries, sentence) {
+    if (entries.length < 2) return; // need at least 2 windows to say one stands out
+    const mean = entries.reduce((s, e) => s + e.value, 0) / entries.length;
+    entries.forEach(e => {
+      const margin = higherIsBetter ? e.value - mean : mean - e.value;
+      candidates.push({ metric, margin, sentence: sentence(e) });
+    });
+  }
+
+  scan("2pt", true,
+    buckets.filter(b => b.fg2.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg2.pct })),
+    e => (hl) => `Shoots ${hl(`${e.value}%`)} on 2PT in the ${pscBucketName(e.b.label)} (${e.b.fg2.m}/${e.b.fg2.a}).`);
+
+  scan("3pt", true,
+    buckets.filter(b => b.fg3.a >= PSC_SW_MIN_ATTEMPTS).map(b => ({ b, value: b.fg3.pct })),
+    e => (hl) => `Shoots ${hl(`${e.value}%`)} on 3PT in the ${pscBucketName(e.b.label)} (${e.b.fg3.m}/${e.b.fg3.a}).`);
+
+  scan("oreb", true,
+    buckets.map(b => ({ b, value: b.oreb_2pt + b.oreb_3pt })),
+    e => (hl) => `Grabs ${hl(`${e.value}`)} offensive rebound${e.value === 1 ? "" : "s"} in the ${pscBucketName(e.b.label)}.`);
+
+  scan("fouled", true,
+    buckets.map(b => ({ b, value: b.fouled })),
+    e => (hl) => `Draws ${hl(`${e.value}`)} foul${e.value === 1 ? "" : "s"} in the ${pscBucketName(e.b.label)}.`);
+
+  scan("tov", false,
+    buckets.map(b => ({ b, value: b.tov })),
+    e => (hl) => `Turns it over ${hl(`${e.value}`)} time${e.value === 1 ? "" : "s"} in the ${pscBucketName(e.b.label)}.`);
+
+  // Prefers 2 DIFFERENT stat types over the same one twice (e.g. "fouled"
+  // showing up for both weakness slots just because the other 2 windows
+  // both sit below this player's 3-window average for it) -- falls back
+  // to repeating a metric only if there aren't 2 distinct ones to pick
+  // from at all.
+  function pickDiverse(sorted, n) {
+    const chosen = [], usedMetrics = new Set();
+    for (const c of sorted) {
+      if (chosen.length >= n) break;
+      if (usedMetrics.has(c.metric)) continue;
+      chosen.push(c);
+      usedMetrics.add(c.metric);
+    }
+    for (const c of sorted) {
+      if (chosen.length >= n) break;
+      if (!chosen.includes(c)) chosen.push(c);
+    }
+    return chosen;
+  }
+
+  const EPS = 0.01;
+  const strengths = pickDiverse(candidates.filter(c => c.margin > EPS).sort((a, b) => b.margin - a.margin), 2);
+  const weaknesses = pickDiverse(candidates.filter(c => c.margin < -EPS).sort((a, b) => a.margin - b.margin), 2);
+  return { strengths, weaknesses };
+}
+
+function pscStrengthsWeaknessesHtml(buckets) {
+  const { strengths, weaknesses } = pscComputeStrengthsWeaknesses(buckets);
+  const hlStrength = (text) => `<span class="psc-sw-hl psc-sw-hl-good">${text}</span>`;
+  const hlWeakness = (text) => `<span class="psc-sw-hl psc-sw-hl-bad">${text}</span>`;
+
+  const column = (title, cls, items, hl, emptyText) => `
+    <div>
+      <div class="psc-sw-head ${cls}">${title}</div>
+      ${items.length
+        ? `<ul class="psc-sw-list">${items.map(c => `<li>${c.sentence(hl)}</li>`).join("")}</ul>`
+        : `<p class="muted">${emptyText}</p>`}
+    </div>`;
+
+  return `
+    <div class="psc-sw">
+      ${column("Strengths", "psc-sw-head-good", strengths, hlStrength, "No window stands out above his own average.")}
+      ${column("Weaknesses", "psc-sw-head-bad", weaknesses, hlWeakness, "No window falls notably below his own average.")}
+    </div>`;
 }
 
 // For each shot type (2PT/3PT/FT) separately, which shot-clock section has

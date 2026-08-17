@@ -653,6 +653,37 @@ body.modal-open { overflow: hidden; }
 .mu-condensed-arrow { font-weight: 800; font-size: 11px; }
 .mu-condensed-last3 { white-space: nowrap; }
 
+/* Player Shot Chart -- per-slot "Strengths & weaknesses" card, under the
+   shot-clock table. Same 2-column layout as Matchup Scout's version, at
+   a smaller scale (fits inside one slot card, not a full-width page
+   section) -- blue-highlighted numbers for strengths, red for
+   weaknesses, matching the tier colouring used everywhere else. */
+.psc-sw { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+@media (max-width: 480px) {
+  .psc-sw { grid-template-columns: 1fr; }
+}
+.psc-sw-head {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.psc-sw-head-good { color: #4169e1; }
+.psc-sw-head-bad { color: var(--critical); }
+.psc-sw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.psc-sw-list li {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  background: var(--surface-1);
+  border-radius: 8px;
+}
+.psc-sw-hl { font-weight: 800; }
+.psc-sw-hl-good { color: #4169e1; }
+.psc-sw-hl-bad { color: var(--critical); }
+
 .mu-key {
   display: flex;
   align-items: flex-start;
